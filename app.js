@@ -6,6 +6,7 @@ import {CombatEffects} from './combat-effects.js';
 import {BattleAudio} from './audio.js';
 import {VERSION} from './version.js';
 import {startPwa} from './pwa.js';
+import {fortressLayout,mountLayout,unitPose} from './movement.js';
 const $=id=>document.getElementById(id),icon=id=>`<i data-lucide="${id}"></i>`,icons=()=>window.lucide.createIcons();
 let progress=freshSave(),storageWarning=false,storageBlocked=false;
 try{progress=loadSave(localStorage,()=>{storageWarning=true;storageBlocked=true;});}catch{storageWarning=true;storageBlocked=true;}
@@ -62,20 +63,21 @@ class Battlefield extends Phaser.Scene{
     const keys=[...UNITS.map(u=>u.key),'ally','enemy',...ERAS.map(e=>e.background),...ERAS.map(e=>'base-'+e.id),...WEAPONS.map(w=>w.id)];
     for(const key of keys)this.load.image(key,`assets-v3/${key}.png`);
     for(const u of UNITS.filter(u=>!u.boss))this.load.spritesheet(u.key+'-attack',`assets-v3/motions/${u.key}.png`,{frameWidth:768,frameHeight:512});
+    for(const u of UNITS.filter(u=>!u.boss&&!u.air))this.load.spritesheet(u.key+'-walk',`assets-v4/walk/${u.key}.png`,{frameWidth:768,frameHeight:512});
     this.load.on('progress',p=>{$('loading').textContent=`전장 준비 ${Math.round(p*100)}%`;if($('asset-status'))$('asset-status').textContent=`이미지 준비 ${Math.round(p*100)}%`;});this.load.on('loaderror',()=>{storageWarning=true;});
   }
   create(){scene=this;this.bg=this.add.image(0,0,'background').setDepth(0);this.bases=[this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2),this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2)];this.mounts=[this.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2),this.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2)];this.effects=new CombatEffects(this);this.lines=this.add.graphics().setDepth(9);
-    ready=UNITS.every(u=>this.textures.exists(u.key))&&UNITS.filter(u=>!u.boss).every(u=>this.textures.exists(u.key+'-attack'))&&ERAS.every(e=>this.textures.exists('base-'+e.id)&&this.textures.exists(e.background));
+    ready=UNITS.every(u=>this.textures.exists(u.key))&&UNITS.filter(u=>!u.boss).every(u=>this.textures.exists(u.key+'-attack')&&this.textures.exists(u.key+'-walk'))&&ERAS.every(e=>this.textures.exists('base-'+e.id)&&this.textures.exists(e.background));
     if(ready){$('loading').remove();$('asset-status')?.remove();lobby.render();}else toast('일부 이미지를 불러오지 못했습니다. 새로고침해 주세요.');if(storageWarning)toast('저장 또는 이미지 정보를 확인해 주세요. 기존 저장 데이터는 덮어쓰지 않았습니다.');
   }
   clearActors(){for(const a of this.actors.values())a.destroy();this.actors.clear();this.effects?.clear();this.accumulator=0;this.noticeUntil=0;this.shakeUntil=0;this.cameras.main.setScroll(0,0);$('battle-notice').style.display='none';}
   layout(){
     const w=this.scale.width,h=this.scale.height,dpr=currentDpr;this.dpr=dpr;const margin=20*dpr;this.factor=(w-margin*2)/WORLD.width;this.unitScale=Math.min(1.35,Math.max(.8,w/dpr/640))*dpr;this.ground=h*.82;this.project=x=>margin+x*this.factor;
     this.bg.setTexture(battle.era.background);const source=this.bg.texture.getSourceImage(),bgscale=Math.max(w/source.width,h/source.height);this.bg.setPosition(w/2,h/2).setDisplaySize(source.width*bgscale,source.height*bgscale);
-    const baseWidth=Math.min(175*dpr,w*.205),baseKey='base-'+battle.era.id;
+    const baseKey='base-'+battle.era.id,baseSource=this.textures.get(baseKey).getSourceImage(),fort=fortressLayout(w,h,dpr,baseSource.height/baseSource.width),baseWidth=fort.width;
     for(let team=0;team<2;team++){
-      const img=this.bases[team];img.setTexture(baseKey);const tex=img.texture.getSourceImage(),height=baseWidth*tex.height/tex.width,x=this.project(WORLD.bases[team]);img.setPosition(x,this.ground+3*dpr).setDisplaySize(baseWidth,height).setFlipX(team===1);if(team===1)img.setTint(0xffd1c5);else img.clearTint();
-      const t=battle.turrets[team],mount=this.mounts[team];mount.setVisible(!!t);if(t){mount.setTexture(t.id);const m=mount.texture.getSourceImage(),mw=baseWidth*.58;mount.setPosition(x+(team?-1:1)*8*dpr-(t.attack>0?(team?-1:1)*4*dpr:0),this.ground-height*.7).setDisplaySize(mw,mw*m.height/m.width).setFlipX(team===1).setAngle(t.attack>0?(team?3:-3):0);if(team)mount.setTint(0xffc6b4);else mount.clearTint();}
+      const img=this.bases[team];img.setTexture(baseKey);const height=fort.height,x=fort.centres[team];img.setPosition(x,this.ground+3*dpr).setDisplaySize(baseWidth,height).setFlipX(team===1);if(team===1)img.setTint(0xffd1c5);else img.clearTint();
+      const t=battle.turrets[team],mount=this.mounts[team];mount.setVisible(!!t);if(t){mount.setTexture(t.id);const m=mount.texture.getSourceImage(),fit=mountLayout(fort,this.ground,h,dpr,m.height/m.width,team);mount.setPosition(fit.x-(t.attack>0?(team?-1:1)*4*dpr:0),fit.y).setDisplaySize(fit.width,fit.height).setFlipX(team===1).setAngle(t.attack>0?(team?3:-3):0);if(team)mount.setTint(0xffc6b4);else mount.clearTint();}
     }
   }
   unitHeight(kind){return Math.min((UNITS[kind]?.height??66)*this.unitScale,this.scale.height*.38);}
@@ -85,8 +87,8 @@ class Battlefield extends Phaser.Scene{
     const g=this.lines,dpr=this.dpr;g.clear();const live=new Set();
     for(const u of battle.units){
       live.add(u.id);const d=UNITS[u.kind];let a=this.actors.get(u.id);if(!a){a=this.add.sprite(0,0,d.boss?d.key:d.key+'-attack').setOrigin(.5,1);this.actors.set(u.id,a);}
-      const phase=u.attack?(u.attack.elapsed<d.windup?1:u.attack.elapsed<d.windup+.1?2:3):0;if(!d.boss)a.setFrame(phase);
-      const direction=u.team?-1:1,lunge=phase===2?(d.projectile?-4:d.key==='mammoth'?10:6):phase===1?-2:0,x=this.project(u.x),height=this.unitHeight(u.kind),air=d.air?25*this.unitScale:0,y=this.ground+(u.id%3)*3*dpr-air+(u.attack?0:Math.sin(battle.time*9+u.id)*1.5*dpr);
+      const pose=unitPose(d,u),phase=pose.phase;if(a.texture.key!==pose.texture)a.setTexture(pose.texture);if(!d.boss)a.setFrame(pose.frame);
+      const direction=u.team?-1:1,lunge=phase===2?(d.projectile?-4:d.key==='mammoth'?10:6):phase===1?-2:0,x=this.project(u.x),height=this.unitHeight(u.kind),air=d.air?25*this.unitScale:0,y=this.ground+(u.id%3)*3*dpr-air+(d.air?Math.sin(battle.time*5+u.id)*2*dpr:0);
       a.setFlipX(u.team===1).setDisplaySize(height*a.frame.realWidth/a.frame.realHeight,height).setPosition(x+direction*(lunge-(u.hurt>0?4:0))*dpr,y).setAngle(d.boss?direction*(phase===2?7:phase===1?-4:0):0).setDepth(3+(u.id%3)*.1);
       if(u.hurt>0)a.setTint(0xffb59c);else if(u.team===1)a.setTint(0xffddd0);else a.clearTint();g.fillStyle(u.team?0xa14d41:0x204d35,.28);g.fillEllipse(x,this.ground+4*dpr,26*this.unitScale,5*dpr);
       if(u.hp<u.maxHp||d.boss){const width=(d.boss?54:30)*this.unitScale;g.fillStyle(0x25372a,.8);g.fillRect(x-width/2,y-height-7*dpr,width,4*dpr);g.fillStyle(u.team?0xec7563:0x7bd591,1);g.fillRect(x-width/2,y-height-7*dpr,width*Math.max(0,u.hp/u.maxHp),4*dpr);}
@@ -105,5 +107,5 @@ const field=$('field');let currentDpr=Math.min(3,window.devicePixelRatio||1);
 const game=new Phaser.Game({type:Phaser.CANVAS,parent:'field',width:Math.round(390*currentDpr),height:Math.round(330*currentDpr),backgroundColor:'#91bfab',scene:Battlefield,audio:{noAudio:true},render:{antialias:true},scale:{mode:Phaser.Scale.NONE}});
 function resize(){if(field.clientWidth<1||field.clientHeight<1)return;currentDpr=Math.min(3,window.devicePixelRatio||1);game.scale.resize(Math.round(field.clientWidth*currentDpr),Math.round(field.clientHeight*currentDpr));}
 new ResizeObserver(resize).observe(field);window.addEventListener('resize',resize);
-window.__LW={snapshot:()=>({stage:battle.stage,era:battle.era.id,time:battle.time,food:battle.food,trophy:battle.trophy,speed,units:battle.units.map(u=>({id:u.id,kind:u.kind,team:u.team,x:u.x,hp:u.hp,attack:u.attack,frame:scene?.actors.get(u.id)?.frame.name})),outcome:battle.outcome,paused,active,ready,textures:scene?.textures.getTextureKeys(),effects:scene?.effects.active.length,basePositions:WORLD.bases.map(x=>scene?.project?.(x)),progress:structuredClone(progress)})};
+window.__LW={snapshot:()=>({stage:battle.stage,era:battle.era.id,time:battle.time,food:battle.food,trophy:battle.trophy,speed,units:battle.units.map(u=>({id:u.id,kind:u.kind,team:u.team,x:u.x,hp:u.hp,attack:u.attack,moving:u.moving,walkDistance:u.walkDistance,texture:scene?.actors.get(u.id)?.texture.key,renderY:scene?.actors.get(u.id)?.y,frame:scene?.actors.get(u.id)?.frame.name})),outcome:battle.outcome,paused,active,ready,textures:scene?.textures.getTextureKeys(),effects:scene?.effects.active.length,basePositions:WORLD.bases.map(x=>scene?.project?.(x)),fortresses:scene?.bases.map(b=>({x:b.x,y:b.y,width:b.displayWidth,height:b.displayHeight})),mounts:scene?.mounts.map(m=>({x:m.x,y:m.y,width:m.displayWidth,height:m.displayHeight,visible:m.visible})),ground:scene?.ground,progress:structuredClone(progress)})};
 goLobby();startPwa(toast);
