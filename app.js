@@ -1,106 +1,109 @@
-import {Battle,UNITS,SKILLS,UPGRADES,freshSave,validateSave,settle,upgradeCost,buyUpgrade} from './model.js';
+import {Battle,settle} from './model.js';
+import {UNITS,ERAS,SKILLS,ITEMS,WEAPONS,WORLD} from './data.js';
+import {freshSave,loadSave,migrateSave,replaceSave,SAVE_KEY} from './save.js';
+import {Lobby} from './lobby.js';
+import {CombatEffects} from './combat-effects.js';
 import {BattleAudio} from './audio.js';
 import {VERSION} from './version.js';
 import {startPwa} from './pwa.js';
-const $=id=>document.getElementById(id);
-const icon=name=>`<i data-lucide="${name}"></i>`;
-const refreshIcons=()=>window.lucide.createIcons();
-const SAVE_KEY='line-warriors-v1';
-let progress=freshSave();let storageWarning=false;
-try {const raw=localStorage.getItem(SAVE_KEY);if(raw)progress=validateSave(JSON.parse(raw));}catch{storageWarning=true;}
-let battle=new Battle(progress.unlocked,progress);let paused=false;let ready=false;let scene;let resultShown=false;
-const persist=()=>{try{localStorage.setItem(SAVE_KEY,JSON.stringify(progress));}catch{toast('자동 저장이 불가능합니다. 설정에서 저장코드를 보관해 주세요.');}};
-let toastTimer;
-function toast(text){$('toast').textContent=text;$('toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').style.display='none',3500);}
+const $=id=>document.getElementById(id),icon=id=>`<i data-lucide="${id}"></i>`,icons=()=>window.lucide.createIcons();
+let progress=freshSave(),storageWarning=false,storageBlocked=false;
+try{progress=loadSave(localStorage,()=>{storageWarning=true;storageBlocked=true;});}catch{storageWarning=true;storageBlocked=true;}
+let battle=new Battle(progress.unlocked,progress),paused=true,ready=false,active=false,scene,resultShown=false,speed=1,lastReward=0,toastTimer;
+function toast(text){$('toast').textContent=text;$('toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').style.display='none',3800);}
+function persist(){try{if(storageBlocked)throw new Error();localStorage.setItem(SAVE_KEY,JSON.stringify(progress));}catch{toast('자동 저장이 불가능합니다. 설정에서 저장코드를 내보내 주세요.');}updateCoins();}
+function updateCoins(){$('coin-label').innerHTML=icon('coins')+progress.coins;icons();}
 const audio=new BattleAudio(()=>progress.settings);
 document.addEventListener('pointerdown',()=>audio.wake());
-$('pause').innerHTML=icon('pause');$('campaign').innerHTML=icon('map')+'전장';$('upgrades').innerHTML=icon('swords')+'강화';$('settings').innerHTML=icon('settings')+'설정';
-$('units').innerHTML=UNITS.slice(0,3).map((u,i)=>`<button class="unit-button" id="unit-${i}" aria-label="${u.name} 생산"><div class="cooldown"></div><img src="assets/${u.key}.png" alt=""><div class="unit-copy"><strong>${u.name}</strong><small>${u.role}</small><span class="price">고기 ${u.cost}</span></div></button>`).join('');
-$('skills').innerHTML=SKILLS.map((s,i)=>`<button class="skill-button" id="skill-${i}" aria-label="${s.name}">${icon(['flame','zap','wrench'][i])}<span>${s.name}</span><small></small></button>`).join('');refreshIcons();
-UNITS.slice(0,3).forEach((_,i)=>$(`unit-${i}`).onclick=()=>{if(!paused&&ready){battle.spawn(i);updateHud();}});
-SKILLS.forEach((_,i)=>$(`skill-${i}`).onclick=()=>{if(!paused&&ready){battle.skill(i);updateHud();}});
-function show(html){paused=true;scene?.tweens.pauseAll();audio.pause();$('modal-content').innerHTML=html;if(!$('modal').open)$('modal').showModal();refreshIcons();updateHud();}
-function hide(){if($('modal').open)$('modal').close();paused=!!battle.outcome;if(!paused)scene?.tweens.resumeAll();audio.wake();updateHud();}
+const lobby=new Lobby({getProgress:()=>progress,persist,start,toast});
+function setPaused(value){paused=value;battle.paused=value;if(value)audio.pause();else audio.wake();}
 function heading(title){return `<div class="modal-heading"><h2>${title}</h2><button class="close" id="close-modal" aria-label="닫기">${icon('x')}</button></div>`;}
-function wireClose(){const b=$('close-modal');if(b)b.onclick=()=>battle.outcome?showResult():hide();}
-function confirmAction(title,text,callback){show(`${heading(title)}<p>${text}</p><div class="modal-actions"><button class="secondary" id="cancel-action">취소</button><button class="primary" id="confirm-action">확인</button></div>`);wireClose();$('cancel-action').onclick=hide;$('confirm-action').onclick=callback;}
-function start(stage){battle=new Battle(stage,progress);paused=false;resultShown=false;scene?.clearActors();audio.nextNote=0;if($('modal').open)$('modal').close();audio.wake();updateHud();}
-function pauseMenu(){if(battle.outcome){showResult();return;}show(`${heading('잠시 쉬어가기')}<p>${battle.stage} 스테이지 · 원시 시대</p><div class="modal-actions"><button class="primary" id="resume">계속하기</button><button class="secondary" id="restart">다시 시작</button></div><div class="modal-actions"><button class="secondary" id="quit">전투 포기</button></div>`);wireClose();$('resume').onclick=hide;$('restart').onclick=()=>confirmAction('다시 시작','현재 전투를 종료하고 같은 스테이지를 다시 시작합니다. 보상은 지급되지 않습니다.',()=>start(battle.stage));$('quit').onclick=()=>confirmAction('전투 포기','현재 전투를 포기합니다. 보상은 지급되지 않습니다.',()=>{battle.outcome='quit';finish();});}
-$('pause').onclick=pauseMenu;
-function campaignMenu(){show(`${heading('원시의 전장')}<p>별 ${progress.cleared.length} / 10 · 5, 10 스테이지는 보스 전투</p><div class="stage-grid">${Array.from({length:10},(_,i)=>{const s=i+1;return `<button data-stage="${s}" class="${s===battle.stage?'selected ':''}${s%5===0?'boss':''}" ${s>progress.unlocked?'disabled':''}>${s>progress.unlocked?icon('lock'):s}<small>${progress.cleared.includes(s)?'★':s%5===0?'보스':'전투'}</small></button>`;}).join('')}</div>`);wireClose();document.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>{const s=Number(b.dataset.stage);if(battle.time>5&&!battle.outcome)confirmAction('전장 변경','진행 중인 전투를 종료합니다. 보상은 지급되지 않습니다.',()=>start(s));else start(s);});}
-$('campaign').onclick=campaignMenu;
-function upgradesMenu(){show(`${heading('영구 강화')}<p>보유 금화 <strong>${progress.coins}</strong></p>${UPGRADES.map((u,i)=>`<div class="upgrade-row"><div><strong>${u.name} <span>${progress.upgrades[i]} / 8</span></strong><small>${u.detail}</small></div><button data-upgrade="${i}" ${progress.upgrades[i]>=8||progress.coins<upgradeCost(progress,i)?'disabled':''}>${progress.upgrades[i]>=8?'최대 단계':upgradeCost(progress,i)+' 금화'}</button></div>`).join('')}`);wireClose();document.querySelectorAll('[data-upgrade]').forEach(b=>b.onclick=()=>{if(buyUpgrade(progress,Number(b.dataset.upgrade))){persist();upgradesMenu();toast('다음 전투부터 강화가 적용됩니다.');}});}
-$('upgrades').onclick=upgradesMenu;
-function settingsMenu(){show(`${heading('설정')}<label class="setting-row">효과음<input id="sound" type="checkbox" ${progress.settings.sound?'checked':''}></label><label class="setting-row">배경음<input id="music" type="checkbox" ${progress.settings.music?'checked':''}></label><div class="save-transfer"><label for="save-code">저장코드</label><textarea id="save-code" spellcheck="false" aria-label="저장코드"></textarea><div class="modal-actions"><button id="export" class="secondary">${icon('upload')} 내보내기</button><button id="import" class="secondary">${icon('download')} 불러오기</button></div><div id="import-error" class="import-error" role="status"></div></div><div class="version">라인워리어즈 0.2.0 · 원시의 시작</div>`);wireClose();['sound','music'].forEach(id=>$(id).onchange=()=>{progress.settings[id]=$(id).checked;persist();});$('export').onclick=()=>{const code='LW2.'+btoa(JSON.stringify(progress));$('save-code').value=code;$('save-code').select();try{navigator.clipboard?.writeText(code).catch(()=>{});}catch{}toast('저장코드를 준비했습니다.');};$('import').onclick=()=>{try{const raw=$('save-code').value.trim();if(!raw.startsWith('LW2.')||raw.length>12000)throw new Error('올바른 저장코드가 아닙니다.');const imported=validateSave(JSON.parse(atob(raw.slice(4))));confirmAction('저장 불러오기','현재 진행 상황과 진행 중인 전투가 이 저장 데이터로 교체됩니다.',()=>{progress=imported;persist();start(progress.unlocked);toast('저장 데이터를 불러왔습니다.');});}catch(e){$('import-error').textContent=e.message==='올바른 라인워리어즈 저장 데이터가 아닙니다.'?e.message:'저장코드를 확인해 주세요.';}};}
-$('settings').onclick=settingsMenu;
-let lastReward=0;
+function show(html){setPaused(true);$('modal-content').innerHTML=html;if(!$('modal').open)$('modal').showModal();icons();const close=$('close-modal');if(close)close.onclick=()=>battle.outcome&&active?showResult():hide();updateHud();}
+function hide(){if($('modal').open)$('modal').close();setPaused(!active||!!battle.outcome);updateHud();}
+function confirmAction(title,text,callback){show(`${heading(title)}<p>${text}</p><div class="modal-actions"><button id="cancel-action">취소</button><button class="primary" id="confirm-action">확인</button></div>`);$('cancel-action').onclick=()=>active?pauseMenu():hide();$('confirm-action').onclick=callback;}
+function goLobby(view='home'){active=false;setPaused(true);if($('modal').open)$('modal').close();scene?.clearActors();$('battle-screen').hidden=true;$('lobby').hidden=false;lobby.open(view);updateCoins();}
+function start(stage){
+  if(stage>progress.unlocked)return;if(!ready){toast('이미지를 준비하고 있습니다. 잠시 기다려 주세요.');return;}
+  battle=new Battle(stage,progress);active=true;resultShown=false;speed=1;scene?.clearActors();audio.nextNote=0;
+  $('lobby').hidden=true;$('battle-screen').hidden=false;if($('modal').open)$('modal').close();setPaused(false);renderCommands();resize();updateHud();
+}
+function renderCommands(){
+  $('units').innerHTML=battle.roster.map((k,i)=>{const u=UNITS[k];return `<button class="unit-button" id="unit-${i}" aria-label="${u.name} 생산"><div class="cooldown"></div><img src="assets-v3/${u.key}.png" alt=""><div class="unit-copy"><strong>${u.name}</strong><small>${u.role}</small><span class="price"></span></div></button>`;}).join('');
+  $('skills').innerHTML=battle.skillIds.map((id,i)=>{const s=SKILLS.find(s=>s.id===id);return `<button class="skill-button" id="skill-${i}" aria-label="${s.name}" title="${s.detail}">${icon(s.icon)}<span>${s.name}</span><small></small></button>`;}).join('');
+  $('items').innerHTML=ITEMS.map(i=>`<button id="item-${i.id}" aria-label="${i.name}" title="${i.detail}">${icon(i.icon)}<span>${i.name}</span><b></b></button>`).join('');
+  for(let i=0;i<3;i++){$('unit-'+i).onclick=()=>{if(active&&!paused&&ready){battle.spawn(i);updateHud();}};$('skill-'+i).onclick=()=>{if(active&&!paused&&ready){if(!battle.skill(i))toast('사용 조건을 확인해 주세요.');updateHud();}};}
+  ITEMS.forEach(i=>$('item-'+i.id).onclick=()=>{if(active&&!paused&&battle.useItem(i.id,progress)){persist();updateHud();}else toast('지금은 사용할 수 없습니다.');});icons();
+}
+function pauseMenu(){if(!active)return;if(battle.outcome){showResult();return;}show(`${heading('잠시 쉬어가기')}<p>${battle.era.name} 시대 · ${battle.stage} 전장</p><div class="modal-actions"><button class="primary" id="resume">계속하기</button><button id="restart">다시 시작</button></div><div class="modal-actions"><button id="quit">${icon('house')}로비로</button></div>`);$('resume').onclick=hide;$('restart').onclick=()=>confirmAction('다시 시작','현재 전투를 포기하고 다시 시작합니다. 사용한 소모품은 반환되지 않습니다.',()=>start(battle.stage));$('quit').onclick=()=>confirmAction('전투 포기','현재 전투를 종료합니다. 금화 보상은 지급되지 않습니다.',()=>{battle.outcome='quit';settle(progress,battle);persist();goLobby();});}
 function finish(){if(!resultShown){lastReward=settle(progress,battle);persist();resultShown=true;}showResult();}
-function showResult(){const win=battle.outcome==='win',quit=battle.outcome==='quit';show(`<img class="defeat-art" src="assets/${win?'club':battle.stage===10?'bossmammoth':'chief'}.png" alt=""><h2>${win?(battle.stage===10?'원시 시대 정복!':'승리!'):quit?'전투 종료':'다시 도전해요'}</h2><p>${battle.stage} 스테이지 · ${Math.floor(battle.time)}초 · 적 처치 ${battle.kills}</p><div class="reward">+ ${lastReward} 금화</div><div class="modal-actions"><button class="secondary" id="result-upgrade">강화</button><button class="primary" id="result-next">${win?(battle.stage===10?'전장 선택':'다음 전투'):'재도전'}</button></div><div class="modal-actions"><button class="secondary" id="result-map">전장</button></div>`);$('result-upgrade').onclick=upgradesMenu;$('result-next').onclick=()=>win&&battle.stage===10?campaignMenu():start(win?battle.stage+1:battle.stage);$('result-map').onclick=campaignMenu;}
-$('modal').addEventListener('cancel',e=>{e.preventDefault();if(battle.outcome)showResult();else hide();});
-window.lineWarriorsBack=()=>{if($('modal').open){if(!battle.outcome)hide();return;}pauseMenu();};
-window.lineWarriorsPause=()=>{if(ready&&!battle.outcome)pauseMenu();};
-document.addEventListener('visibilitychange',()=>{if(document.hidden){audio.pause();if(ready&&!battle.outcome)pauseMenu();}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('modal').open)pauseMenu();});
+function showResult(){const win=battle.outcome==='win';show(`<img class="result-art" src="assets-v3/${win?UNITS[battle.roster[2]].key:UNITS[battle.data.boss??battle.era.bosses[0]].key}.png" alt=""><h2 class="result-title">${win?(battle.stage===50?'모든 시대 정복!':'승리!'):'다시 도전해요'}</h2><p class="result-detail">${battle.era.name} · ${battle.stage} 전장 · ${Math.floor(battle.time)}초 · 적 처치 ${battle.kills}</p><div class="reward">+ ${lastReward} 금화</div><div class="modal-actions"><button id="result-lobby">${icon('house')}로비</button><button class="primary" id="result-next">${win&&battle.stage<50?'다음 전장':'재도전'}</button></div><div class="modal-actions"><button id="result-shop">${icon('shopping-bag')}상점</button><button id="result-map">${icon('map')}전장 선택</button></div>`);$('result-lobby').onclick=()=>goLobby();$('result-next').onclick=()=>start(win&&battle.stage<50?battle.stage+1:battle.stage);$('result-shop').onclick=()=>goLobby('shop');$('result-map').onclick=()=>goLobby('campaign');}
+function settingsMenu(){show(`${heading('설정')}<label class="setting-row">효과음<input id="sound" type="checkbox" ${progress.settings.sound?'checked':''}></label><label class="setting-row">배경음<input id="music" type="checkbox" ${progress.settings.music?'checked':''}></label><div class="save-transfer"><label for="save-code">저장코드</label><textarea id="save-code" spellcheck="false" aria-label="저장코드"></textarea><div class="modal-actions"><button id="export">${icon('upload')}내보내기</button><button id="import">${icon('download')}불러오기</button></div><div id="import-error" class="import-error" role="status"></div></div><div class="version">라인워리어즈 ${VERSION} · 오프라인 지원</div>`);
+  for(const id of ['sound','music'])$(id).onchange=()=>{progress.settings[id]=$(id).checked;persist();};
+  $('export').onclick=()=>{const code='LW2.'+btoa(JSON.stringify(progress));$('save-code').value=code;$('save-code').select();navigator.clipboard?.writeText(code).catch(()=>{});toast('저장코드를 준비했습니다.');};
+  $('import').onclick=()=>{try{const raw=$('save-code').value.trim();if(!raw.startsWith('LW2.')||raw.length>20000)throw new Error();const imported=migrateSave(JSON.parse(atob(raw.slice(4))));confirmAction('저장 불러오기','현재 진행 상황을 가져온 저장 데이터로 교체합니다.',()=>{try{progress=replaceSave(localStorage,imported);storageBlocked=false;updateCoins();goLobby();toast('저장 데이터를 불러왔습니다.');}catch{toast('원본 백업 또는 저장 공간을 확보하지 못했습니다. 현재 기록을 유지합니다.');}});}catch{$('import-error').textContent='올바른 저장코드인지 확인해 주세요.';}};
+}
+$('settings').innerHTML=icon('settings');$('settings').onclick=settingsMenu;$('pause').innerHTML=icon('pause');$('pause').onclick=pauseMenu;
+for(const s of [1,2])$('speed-'+s).onclick=()=>{if(active&&!paused&&!battle.outcome){speed=s;updateHud();}};
+$('modal').addEventListener('cancel',e=>{e.preventDefault();if(active&&battle.outcome)showResult();else hide();});
+window.lineWarriorsBack=()=>{if($('modal').open)hide();else pauseMenu();};window.lineWarriorsPause=()=>{if(active&&!battle.outcome)pauseMenu();};
+document.addEventListener('visibilitychange',()=>{if(document.hidden){audio.pause();if(active&&!battle.outcome)pauseMenu();}});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&active&&!$('modal').open)pauseMenu();});
 function updateHud(){
-  $('coin-label').innerHTML=icon('coins')+progress.coins;$('stage-label').textContent=`${battle.stage} / 10`;
-  $('clock').textContent=`${String(Math.floor(battle.time/60)).padStart(2,'0')}:${String(Math.floor(battle.time%60)).padStart(2,'0')}`;
-  for(const [i,id] of ['ally','enemy'].entries()){$(`${id}-hp`).textContent=Math.ceil(battle.base[i]);$(`${id}-bar`).value=battle.base[i]/battle.baseMax[i];}
-  $('food').textContent=`${Math.floor(battle.food)} / ${battle.cap}`;$('income').textContent=`+${battle.income.toFixed(1)} / 초`;$('trophy').textContent=Math.floor(battle.trophy);
-  const count=battle.units.filter(u=>u.team===0).length;$('army-count').textContent=`${count} / 18`;
-  UNITS.slice(0,3).forEach((u,i)=>{const btn=$(`unit-${i}`);btn.disabled=!ready||paused||!!battle.outcome||battle.food<u.cost||battle.cd[i]>0||count>=18;btn.querySelector('.price').textContent=battle.cd[i]>0?`${battle.cd[i].toFixed(1)}초`:`고기 ${u.cost}`;btn.querySelector('.cooldown').style.height=`${battle.cd[i]/u.cd*100}%`;});
-  SKILLS.forEach((s,i)=>{const btn=$(`skill-${i}`);btn.disabled=!ready||paused||!!battle.outcome||battle.trophy<s.cost||battle.skillCd[i]>0;btn.querySelector('small').textContent=battle.skillCd[i]>0?`${Math.ceil(battle.skillCd[i])}초`:s.cost;});
-  refreshIcons();
+  if(!active)return;$('stage-label').textContent=`${battle.stage} / 50`;$('era-label').textContent=battle.era.name+' 시대';$('clock').textContent=`${String(Math.floor(battle.time/60)).padStart(2,'0')}:${String(Math.floor(battle.time%60)).padStart(2,'0')}`;
+  for(const [i,id]of ['ally','enemy'].entries()){$(id+'-hp').textContent=Math.ceil(battle.base[i]);$(id+'-bar').value=battle.base[i]/battle.baseMax[i];}
+  $('food').textContent=`${Math.floor(battle.food)} / ${battle.cap}`;$('income').textContent=`+${battle.income.toFixed(1)} / 초`;$('trophy').textContent=Math.floor(battle.trophy);const count=battle.count(0);$('army-count').textContent=`${count} / 18`;
+  battle.roster.forEach((k,i)=>{const u=UNITS[k],btn=$('unit-'+i);if(!btn)return;btn.disabled=!ready||paused||!!battle.outcome||battle.food<u.cost||battle.cd[i]>0||count>=18;btn.querySelector('.price').textContent=battle.cd[i]>0?battle.cd[i].toFixed(1)+'초':'식량 '+u.cost;btn.querySelector('.cooldown').style.height=Math.min(100,battle.cd[i]/u.cd*100)+'%';});
+  battle.skillIds.forEach((id,i)=>{const s=SKILLS.find(s=>s.id===id),btn=$('skill-'+i);if(!btn)return;btn.disabled=!ready||paused||!!battle.outcome||battle.trophy<s.cost||battle.skillCd[i]>0||(id==='repair'&&battle.base[0]>=battle.baseMax[0])||(id==='reinforce'&&count>15);btn.querySelector('small').textContent=battle.skillCd[i]>0?Math.ceil(battle.skillCd[i])+'초':s.cost;});
+  ITEMS.forEach(i=>{const btn=$('item-'+i.id);if(!btn)return;btn.querySelector('b').textContent=progress.inventory[i.id];btn.disabled=paused||!!battle.outcome||!progress.inventory[i.id]||battle.usedItems.has(i.id)||(i.id==='food'&&battle.food>=battle.cap)||(i.id==='repair'&&battle.base[0]>=battle.baseMax[0])||(i.id==='horn'&&(count===0||battle.rush>=6));});
+  for(const s of [1,2]){$('speed-'+s).setAttribute('aria-pressed',String(speed===s));$('speed-'+s).disabled=paused||!!battle.outcome;}
 }
-class Battlefield extends Phaser.Scene {
+class Battlefield extends Phaser.Scene{
   constructor(){super('battle');this.actors=new Map();this.accumulator=0;this.hudTime=0;this.noticeUntil=0;}
-  preload(){for(const key of ['club','sling','mammoth','chief','bossmammoth','ally','enemy','background'])this.load.image(key,`assets/${key}.png`);for(const key of ['club','sling','mammoth'])this.load.spritesheet(key+'-attack',`assets/motions/${key}.png`,{frameWidth:512,frameHeight:256});this.load.on('loaderror',()=>{$('loading').textContent='이미지를 불러오지 못했습니다. 새로고침해 주세요.';});}
-  create(){scene=this;this.bg=this.add.image(0,0,'background').setDepth(0);this.ally=this.add.image(0,0,'ally').setOrigin(.5,1).setDepth(2);this.enemy=this.add.image(0,0,'enemy').setOrigin(.5,1).setDepth(2);this.lines=this.add.graphics().setDepth(6);ready=['club','sling','mammoth','chief','bossmammoth','ally','enemy','background'].every(k=>this.textures.exists(k));if(ready)$('loading').remove();updateHud();if(storageWarning)toast('기존 저장 데이터를 읽지 못했습니다. 설정에서 저장코드를 불러올 수 있습니다.');}
-  clearActors(){this.tweens.killAll();for(const a of this.transients||[])a.destroy();this.transients=new Set();this.tweens.resumeAll();for(const a of this.actors.values())a.destroy();this.actors.clear();this.accumulator=0;this.offset=undefined;this.noticeUntil=0;$('battle-notice').style.display='none';}
+  preload(){
+    const keys=[...UNITS.map(u=>u.key),'ally','enemy',...ERAS.map(e=>e.background),...ERAS.map(e=>'base-'+e.id),...WEAPONS.map(w=>w.id)];
+    for(const key of keys)this.load.image(key,`assets-v3/${key}.png`);
+    for(const u of UNITS.filter(u=>!u.boss))this.load.spritesheet(u.key+'-attack',`assets-v3/motions/${u.key}.png`,{frameWidth:768,frameHeight:512});
+    this.load.on('progress',p=>{$('loading').textContent=`전장 준비 ${Math.round(p*100)}%`;if($('asset-status'))$('asset-status').textContent=`이미지 준비 ${Math.round(p*100)}%`;});this.load.on('loaderror',()=>{storageWarning=true;});
+  }
+  create(){scene=this;this.bg=this.add.image(0,0,'background').setDepth(0);this.bases=[this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2),this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2)];this.mounts=[this.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2),this.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2)];this.effects=new CombatEffects(this);this.lines=this.add.graphics().setDepth(9);
+    ready=UNITS.every(u=>this.textures.exists(u.key))&&UNITS.filter(u=>!u.boss).every(u=>this.textures.exists(u.key+'-attack'))&&ERAS.every(e=>this.textures.exists('base-'+e.id)&&this.textures.exists(e.background));
+    if(ready){$('loading').remove();$('asset-status')?.remove();lobby.render();}else toast('일부 이미지를 불러오지 못했습니다. 새로고침해 주세요.');if(storageWarning)toast('저장 또는 이미지 정보를 확인해 주세요. 기존 저장 데이터는 덮어쓰지 않았습니다.');
+  }
+  clearActors(){for(const a of this.actors.values())a.destroy();this.actors.clear();this.effects?.clear();this.accumulator=0;this.noticeUntil=0;this.shakeUntil=0;this.cameras.main.setScroll(0,0);$('battle-notice').style.display='none';}
   layout(){
-    const w=this.scale.width,h=this.scale.height;
-    this.span=Math.min(1000,Math.max(490,w));this.factor=w/this.span;
-    const players=battle.units.filter(u=>u.team===0),enemy=battle.units.filter(u=>u.team===1);
-    const front=players.length?Math.max(...players.map(u=>u.x)):enemy.length?Math.min(...enemy.map(u=>u.x)):120;
-    const desired=Math.max(0,Math.min(1000-this.span,front-this.span*.43));
-    this.offset=this.offset===undefined?desired:this.offset+(desired-this.offset)*.05;
-    this.ground=h*.81;this.project=x=>(x-this.offset)*this.factor;
-    const bgWidth=Math.max(1000*this.factor,h*2);
-    this.bg.setPosition(this.project(500),h/2).setDisplaySize(bgWidth,bgWidth/2);
-    for(const [img,x] of [[this.ally,60],[this.enemy,940]]){
-      const height=Math.min(155,h*.44)*this.factor,tex=img.texture.getSourceImage();
-      img.setPosition(this.project(x),this.ground+7).setDisplaySize(height*tex.width/tex.height,height);
+    const w=this.scale.width,h=this.scale.height,dpr=currentDpr;this.dpr=dpr;const margin=20*dpr;this.factor=(w-margin*2)/WORLD.width;this.unitScale=Math.min(1.35,Math.max(.8,w/dpr/640))*dpr;this.ground=h*.82;this.project=x=>margin+x*this.factor;
+    this.bg.setTexture(battle.era.background);const source=this.bg.texture.getSourceImage(),bgscale=Math.max(w/source.width,h/source.height);this.bg.setPosition(w/2,h/2).setDisplaySize(source.width*bgscale,source.height*bgscale);
+    const baseWidth=Math.min(175*dpr,w*.205),baseKey='base-'+battle.era.id;
+    for(let team=0;team<2;team++){
+      const img=this.bases[team];img.setTexture(baseKey);const tex=img.texture.getSourceImage(),height=baseWidth*tex.height/tex.width,x=this.project(WORLD.bases[team]);img.setPosition(x,this.ground+3*dpr).setDisplaySize(baseWidth,height).setFlipX(team===1);if(team===1)img.setTint(0xffd1c5);else img.clearTint();
+      const t=battle.turrets[team],mount=this.mounts[team];mount.setVisible(!!t);if(t){mount.setTexture(t.id);const m=mount.texture.getSourceImage(),mw=baseWidth*.58;mount.setPosition(x+(team?-1:1)*8*dpr-(t.attack>0?(team?-1:1)*4*dpr:0),this.ground-height*.7).setDisplaySize(mw,mw*m.height/m.width).setFlipX(team===1).setAngle(t.attack>0?(team?3:-3):0);if(team)mount.setTint(0xffc6b4);else mount.clearTint();}
     }
-    $('front-marker').style.left=`${Math.min(100,front/1000*100)}%`;
   }
-  effects(e){const x=this.project(e.x??500),y=this.ground-35*this.factor;audio.effect(e);
-    if(e.type==='warning'){this.noticeUntil=this.time.now+1500;$('battle-notice').textContent='보스 공격 준비!';$('battle-notice').style.display='block';}
-    if(e.type==='spawn'&&e.kind>2){this.noticeUntil=this.time.now+3000;$('battle-notice').textContent=UNITS[e.kind].name+' 등장!';$('battle-notice').style.display='block';}
-    if(e.type==='shot'){const dot=this.add.circle(x,y-18*this.factor,4*this.factor,0xc6c4b6).setStrokeStyle(2,0x594f43).setDepth(8);this.track(dot);const flight={t:0},end=this.project(e.to),startY=dot.y;this.tweens.add({targets:flight,t:1,duration:e.flight*1000,onUpdate:()=>dot.setPosition(x+(end-x)*flight.t,startY+18*this.factor*flight.t-Math.sin(Math.PI*flight.t)*70*this.factor),onComplete:()=>dot.destroy()});}
-    if(e.type==='impact'||e.type==='death'){const heavy=e.kind===2||e.kind===4;if(heavy)this.cameras.main.shake(100,.002);for(let i=0;i<6;i++){const dot=this.add.circle(x,y,heavy?4:2,heavy?0xcba26c:0xffe4a0,.9).setDepth(8);this.track(dot);this.tweens.add({targets:dot,x:x+(i-2.5)*9*this.factor,y:y-12-Math.sin(i)*18,alpha:0,duration:260+i*25,onComplete:()=>dot.destroy()});}}
-    if(e.type==='meteor'){const dot=this.add.circle(x-50,-30,13,0xe89a34).setDepth(8);this.tweens.add({targets:dot,x,y:this.ground-15,duration:260,onComplete:()=>{dot.destroy();this.cameras.main.shake(180,.005);const burst=this.add.circle(x,this.ground-20,90*this.factor,0xffb94f,.6).setDepth(7);this.tweens.add({targets:burst,alpha:0,scale:1.4,duration:350,onComplete:()=>burst.destroy()});}});}
-    if(e.type==='slam')this.cameras.main.shake(150,.005);
-    if(e.type==='repair'){const glow=this.add.circle(this.project(60),this.ground-45,45,0x78d793,.5).setDepth(8);this.tweens.add({targets:glow,alpha:0,scale:1.5,duration:450,onComplete:()=>glow.destroy()});}
-  }
-  track(object){this.transients??=new Set();this.transients.add(object);object.once('destroy',()=>this.transients.delete(object));return object;}
-  update(_,delta){if(!ready)return;this.layout();
-    if(!paused&&!battle.outcome){this.accumulator+=Math.min(delta/1000,.1);while(this.accumulator>=1/60){battle.step(1/60);this.accumulator-=1/60;}audio.music(battle.time);}
-    this.lines.clear();const live=new Set();
-    for(const u of battle.units){live.add(u.id);const d=UNITS[u.kind];let a=this.actors.get(u.id);if(!a){a=this.add.sprite(0,0,u.kind<3?d.key+'-attack':d.key).setOrigin(.5,1);this.actors.set(u.id,a);}const phase=u.attack?(u.attack.elapsed<d.windup?1:u.attack.elapsed<d.windup+.12?2:3):0;if(u.kind<3)a.setFrame(phase);const direction=u.team?-1:1,lunge=phase===2?(u.kind===2?15:9):phase===1?-3:0;const x=this.project(u.x),height=d.height*this.factor,y=this.ground+(u.id%3)*4+(u.attack?0:Math.sin(battle.time*9+u.id)*1.6);a.setFlipX(u.team===1).setDisplaySize(height*a.frame.realWidth/a.frame.realHeight,height).setPosition(x+direction*(lunge-(u.hurt>0?4:0))*this.factor,y).setAngle(u.kind>2?direction*(phase===2?10:phase===1?-5:0):0).setDepth(3+(u.id%3)*.1);if(u.hurt>0)a.setTint(0xffb29b);else a.clearTint();
-      this.lines.fillStyle(u.team?0xbd5a50:0x438c79,.65);this.lines.fillEllipse(x,y+2,25*this.factor,5*this.factor);
-      if(u.hp<u.maxHp||d.boss){const width=(d.boss?58:32)*this.factor;this.lines.fillStyle(0x193d2e,.55);this.lines.fillRect(x-width/2,y-height-8,width,4);this.lines.fillStyle(u.team?0xe26357:0x63ba85,1);this.lines.fillRect(x-width/2,y-height-8,width*Math.max(0,u.hp/u.maxHp),4);}
-      if(u.windup>0){this.lines.fillStyle(0xe95c45,.16+.1*Math.sin(battle.time*15));this.lines.fillEllipse(x,this.ground,230*this.factor,35);this.lines.lineStyle(2,0xf67149,.9);this.lines.strokeEllipse(x,this.ground,230*this.factor,35);}
-      if(battle.rush>0&&u.team===0){this.lines.lineStyle(2,0x9be5ad,.8);this.lines.strokeCircle(x,y-height/2,height*.55);}
+  unitHeight(kind){return Math.min((UNITS[kind]?.height??66)*this.unitScale,this.scale.height*.38);}
+  update(_,delta){
+    if(!ready||!active)return;this.layout();
+    if(!paused&&!battle.outcome){this.accumulator+=Math.min(delta/1000,.1)*speed;while(this.accumulator>=1/60){battle.step(1/60);this.accumulator-=1/60;if(battle.outcome)break;}audio.music(battle.time);}
+    const g=this.lines,dpr=this.dpr;g.clear();const live=new Set();
+    for(const u of battle.units){
+      live.add(u.id);const d=UNITS[u.kind];let a=this.actors.get(u.id);if(!a){a=this.add.sprite(0,0,d.boss?d.key:d.key+'-attack').setOrigin(.5,1);this.actors.set(u.id,a);}
+      const phase=u.attack?(u.attack.elapsed<d.windup?1:u.attack.elapsed<d.windup+.1?2:3):0;if(!d.boss)a.setFrame(phase);
+      const direction=u.team?-1:1,lunge=phase===2?(d.projectile?-4:d.key==='mammoth'?10:6):phase===1?-2:0,x=this.project(u.x),height=this.unitHeight(u.kind),air=d.air?25*this.unitScale:0,y=this.ground+(u.id%3)*3*dpr-air+(u.attack?0:Math.sin(battle.time*9+u.id)*1.5*dpr);
+      a.setFlipX(u.team===1).setDisplaySize(height*a.frame.realWidth/a.frame.realHeight,height).setPosition(x+direction*(lunge-(u.hurt>0?4:0))*dpr,y).setAngle(d.boss?direction*(phase===2?7:phase===1?-4:0):0).setDepth(3+(u.id%3)*.1);
+      if(u.hurt>0)a.setTint(0xffb59c);else if(u.team===1)a.setTint(0xffddd0);else a.clearTint();g.fillStyle(u.team?0xa14d41:0x204d35,.28);g.fillEllipse(x,this.ground+4*dpr,26*this.unitScale,5*dpr);
+      if(u.hp<u.maxHp||d.boss){const width=(d.boss?54:30)*this.unitScale;g.fillStyle(0x25372a,.8);g.fillRect(x-width/2,y-height-7*dpr,width,4*dpr);g.fillStyle(u.team?0xec7563:0x7bd591,1);g.fillRect(x-width/2,y-height-7*dpr,width*Math.max(0,u.hp/u.maxHp),4*dpr);}
+      if(battle.shield>0&&u.team===0||u.bossShield>0){g.lineStyle(2*dpr,0x8dd9ff,.7);g.strokeEllipse(x,y-height/2,height*.85,height*1.08);}
+      if(battle.rush>0&&u.team===0){g.lineStyle(2*dpr,0xffd85b,.7);for(let i=0;i<3;i++)g.lineBetween(x-12*dpr-i*6*dpr,y-height*.4+i*5*dpr,x-28*dpr-i*5*dpr,y-height*.4+i*5*dpr);}
+      if(u.windup>0){g.lineStyle(2*dpr,0xff5f43,.65+.2*Math.sin(battle.time*20));g.strokeEllipse(this.project(u.patternX??u.x),this.ground,180*this.factor,24*this.unitScale);}
     }
-    for(const [id,a] of this.actors)if(!live.has(id)){a.destroy();this.actors.delete(id);}
-    for(const e of battle.events.splice(0))this.effects(e);
-    if(this.time.now>this.noticeUntil)$('battle-notice').style.display='none';
-    if(this.time.now-this.hudTime>100){updateHud();this.hudTime=this.time.now;}
-    if(battle.outcome&&!resultShown)finish();
+    for(const [id,a]of this.actors)if(!live.has(id)){a.destroy();this.actors.delete(id);}
+    for(const e of battle.events.splice(0)){audio.effect(e);this.effects.emit(e,battle.time);if(['meteor-impact','bombard-impact','slam'].includes(e.type))this.shakeUntil=battle.time+.18;if(e.type==='warning'){this.noticeUntil=battle.time+1.5;$('battle-notice').textContent='보스 공격 준비!';$('battle-notice').style.display='block';}if(e.type==='spawn'&&UNITS[e.kind]?.boss){this.noticeUntil=battle.time+3;$('battle-notice').textContent=UNITS[e.kind].name+' 등장!';$('battle-notice').style.display='block';}}
+    const shake=Math.max(0,(this.shakeUntil??0)-battle.time)/.18;this.cameras.main.setScroll(Math.sin(battle.time*90)*2*dpr*shake,Math.cos(battle.time*75)*dpr*shake);
+    this.effects.render(battle.time,{project:this.project,ground:this.ground,unitScale:this.unitScale,dpr,unitHeight:k=>this.unitHeight(k)});
+    if(battle.time>this.noticeUntil)$('battle-notice').style.display='none';if(this.time.now-this.hudTime>100){updateHud();this.hudTime=this.time.now;}if(battle.outcome&&!resultShown)finish();
   }
 }
-const field=$('field');
-const game=new Phaser.Game({type:Phaser.CANVAS,parent:'field',width:field.clientWidth,height:field.clientHeight,backgroundColor:'#82b8c6',scene:Battlefield,audio:{noAudio:true},render:{antialias:true},scale:{mode:Phaser.Scale.RESIZE}});
-new ResizeObserver(()=>game.scale.resize(field.clientWidth,field.clientHeight)).observe(field);
-window.__LW={snapshot:()=>({stage:battle.stage,time:battle.time,food:battle.food,units:battle.units.map(u=>({id:u.id,kind:u.kind,team:u.team,x:u.x,hp:u.hp,attack:u.attack,frame:scene?.actors.get(u.id)?.frame.name})),outcome:battle.outcome,paused,ready,textures:scene?.textures.getTextureKeys(),progress:JSON.parse(JSON.stringify(progress))})};
-updateHud();
-startPwa(toast);
+const field=$('field');let currentDpr=Math.min(3,window.devicePixelRatio||1);
+const game=new Phaser.Game({type:Phaser.CANVAS,parent:'field',width:Math.round(390*currentDpr),height:Math.round(330*currentDpr),backgroundColor:'#91bfab',scene:Battlefield,audio:{noAudio:true},render:{antialias:true},scale:{mode:Phaser.Scale.NONE}});
+function resize(){if(field.clientWidth<1||field.clientHeight<1)return;currentDpr=Math.min(3,window.devicePixelRatio||1);game.scale.resize(Math.round(field.clientWidth*currentDpr),Math.round(field.clientHeight*currentDpr));}
+new ResizeObserver(resize).observe(field);window.addEventListener('resize',resize);
+window.__LW={snapshot:()=>({stage:battle.stage,era:battle.era.id,time:battle.time,food:battle.food,trophy:battle.trophy,speed,units:battle.units.map(u=>({id:u.id,kind:u.kind,team:u.team,x:u.x,hp:u.hp,attack:u.attack,frame:scene?.actors.get(u.id)?.frame.name})),outcome:battle.outcome,paused,active,ready,textures:scene?.textures.getTextureKeys(),effects:scene?.effects.active.length,basePositions:WORLD.bases.map(x=>scene?.project?.(x)),progress:structuredClone(progress)})};
+goLobby();startPwa(toast);

@@ -1,3 +1,4 @@
+import {UNITS} from './data.js';
 const noiseBuffers=new WeakMap();
 function noiseBuffer(context){
   if(noiseBuffers.has(context))return noiseBuffers.get(context);
@@ -29,6 +30,11 @@ export function renderEffect(c,out,flavor,when=c.currentTime,volume=1){
   const tone=(a,b,d,v,type='sine',delay=0)=>pitched(c,out,when+delay,a,b,d,v*volume,type);
   const noise=(d,v,f,type='lowpass',delay=0)=>burst(c,out,when+delay,d,v*volume,f,type);
   switch(flavor){
+    case 'gunshot': noise(.045,.38,4200,'highpass');tone(175,58,.12,.2);noise(.13,.08,1100,'bandpass',.02);break;
+    case 'cannonShot': tone(95,24,.52,.42);noise(.12,.3,2100);noise(.45,.11,380,'lowpass',.035);break;
+    case 'laserShot': tone(1800,290,.18,.11,'sawtooth');tone(850,140,.24,.1,'triangle');noise(.08,.06,5000,'highpass');break;
+    case 'arrowShot': noise(.08,.13,3100,'bandpass');tone(430,190,.095,.09,'triangle');break;
+    case 'shield': tone(240,520,.45,.07,'triangle');tone(480,1040,.55,.05,'sine',.06);break;
     case 'clubSwing': noise(.17,.09,1700,'bandpass');tone(230,100,.13,.025,'triangle');break;
     case 'clubImpact': tone(155,48,.24,.32);noise(.095,.28,1700,'bandpass');tone(510,240,.06,.075,'triangle');tone(95,65,.13,.06,'sine',.025);break;
     case 'stoneThrow': noise(.16,.095,2700,'bandpass');tone(1050,680,.12,.035,'sine');break;
@@ -57,11 +63,14 @@ export class BattleAudio {
   effect(e){
     if(!this.settings().sound||!this.context||this.context.state!=='running')return;
     let flavor=e.type;
-    const mammoth=e.kind===2||e.kind===4;
+    const mammoth=e.kind===2||e.kind===4,projectile=e.projectile??UNITS[e.kind]?.projectile;
     if(e.type==='attack')flavor=mammoth?'mammothWindup':e.kind===1?null:'clubSwing';
-    if(e.type==='shot')flavor='stoneThrow';
-    if(e.type==='impact')flavor=mammoth?'mammothImpact':e.kind===1?'stoneImpact':'clubImpact';
-    if(!flavor||!['clubSwing','clubImpact','stoneThrow','stoneImpact','mammothWindup','mammothImpact','slam','meteor','repair','spawn','warning'].includes(flavor))return;
+    if(e.type==='shot')flavor=projectile==='stone'?'stoneThrow':projectile==='arrow'?'arrowShot':projectile==='bullet'?'gunshot':['laser','plasma'].includes(projectile)?'laserShot':'cannonShot';
+    if(e.type==='impact')flavor=mammoth?'mammothImpact':projectile==='stone'?'stoneImpact':['shell','missile','drone','plasma'].includes(projectile)?'cannonShot':'clubImpact';
+    if(e.type==='attack'&&projectile)flavor=null;
+    if(e.type==='meteor')flavor=null;
+    if(e.type==='meteor-impact'||e.type==='bombard-impact')flavor='meteor';
+    if(!flavor||!['gunshot','cannonShot','laserShot','arrowShot','shield','clubSwing','clubImpact','stoneThrow','stoneImpact','mammothWindup','mammothImpact','slam','meteor','repair','spawn','warning'].includes(flavor))return;
     const now=this.context.currentTime,last=this.last.get(flavor)??-10;
     if(now-last<(mammoth ? 0.1 : 0.045))return;this.last.set(flavor,now);
     renderEffect(this.context,this.output,flavor,now,e.team===1 ? 0.8 : 1);
