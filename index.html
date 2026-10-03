@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#153f35"><title>라인워리어즈</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="라인워리어즈">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+  <main id="app">
+    <header><div class="brand">라인워리어즈 <span>원시의 시작</span></div><div class="header-actions"><span id="coin-label" class="coins"></span><button id="pause" class="icon-button" aria-label="일시정지" title="일시정지"></button></div></header>
+    <section class="battle-status" aria-label="전투 상태">
+      <div class="base-status"><span>아군 기지 <b id="ally-hp"></b></span><progress id="ally-bar" max="1" value="1"></progress></div>
+      <div class="stage-status"><strong id="stage-label"></strong><span id="clock">00:00</span></div>
+      <div class="base-status enemy"><span>적군 기지 <b id="enemy-hp"></b></span><progress id="enemy-bar" max="1" value="1"></progress></div>
+    </section>
+    <section id="field" aria-label="전장"><div id="loading">전장 준비 중…</div><div id="battle-notice" role="status"></div><div class="era-tag">원시 시대 <span id="army-count"></span></div><div id="minimap"><i id="front-marker"></i></div></section>
+    <section class="command-deck">
+      <div class="resources"><div><span class="resource-label">고기</span><strong id="food"></strong><small id="income"></small></div><div><span class="resource-label trophy">전리품</span><strong id="trophy"></strong></div></div>
+      <div id="units" class="unit-grid"></div>
+      <div id="skills" class="skill-grid"></div>
+    </section>
+    <nav aria-label="게임 메뉴"><button id="campaign"></button><button id="upgrades"></button><button id="settings"></button></nav>
+    <dialog id="modal"><div id="modal-content"></div></dialog>
+    <div id="toast" role="status"></div>
+  </main>
+  <script src="vendor/phaser.min.js"></script><script src="vendor/lucide.min.js"></script><script type="module" src="app.js"></script>
+</body>
+</html>

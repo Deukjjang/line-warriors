@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "라인워리어즈",
+  "short_name": "라인워리어즈",
+  "lang": "ko",
+  "description": "원시 시대의 전사들과 함께하는 라인 전투 게임",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#153f35",
+  "theme_color": "#153f35",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
