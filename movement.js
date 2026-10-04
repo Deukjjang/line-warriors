@@ -12,6 +12,6 @@ export function unitPose(data,unit){
   const phase=unit.attack?(unit.attack.elapsed<data.windup?1:unit.attack.elapsed<data.windup+.1?2:3):0;
   if(data.air)return {texture:data.key,frame:0,phase};
   if(unit.attack)return {texture:data.boss?data.key:data.key+'-attack',frame:phase,phase};
-  if(unit.moving&&!data.boss)return {texture:data.key+'-walk',frame:Math.floor((unit.walkDistance??0)/10)%4,phase:0};
+  if(unit.moving&&!data.boss)return {texture:data.key+'-walk',frame:Math.floor((unit.walkDistance??0)/6)%4,phase:0};
   return {texture:data.boss?data.key:data.key+'-attack',frame:0,phase:0};
 }

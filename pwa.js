@@ -1,7 +1,7 @@
 export async function startPwa(notify){
  if(!window.isSecureContext||!('serviceWorker' in navigator))return;
  try{
-  const registration=await navigator.serviceWorker.register(new URL('./sw.js',import.meta.url),{updateViaCache:'none'});
+  const registration=await navigator.serviceWorker.register(new URL('./sw.js',document.baseURI),{updateViaCache:'none'});
   let announced=false;
   const watched=new WeakSet();
   const installed=()=>{
