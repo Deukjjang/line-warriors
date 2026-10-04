@@ -6,7 +6,8 @@ import {CombatEffects} from './combat-effects.js';
 import {BattleAudio} from './audio.js';
 import {VERSION} from './version.js';
 import {startPwa} from './pwa.js';
-import {fortressLayout,mountLayout,unitPose} from './movement.js';
+import {fortressLayout,unitPose} from './movement.js';
+import {FortressMounts} from './mounting.js';
 const $=id=>document.getElementById(id),icon=id=>`<i data-lucide="${id}"></i>`,icons=()=>window.lucide.createIcons();
 let progress=freshSave(),storageWarning=false,storageBlocked=false;
 try{progress=loadSave(localStorage,()=>{storageWarning=true;storageBlocked=true;});}catch{storageWarning=true;storageBlocked=true;}
@@ -66,7 +67,7 @@ class Battlefield extends Phaser.Scene{
     for(const u of UNITS.filter(u=>!u.boss&&!u.air))this.load.spritesheet(u.key+'-walk',`assets-v4/walk/${u.key}.png`,{frameWidth:768,frameHeight:512});
     this.load.on('progress',p=>{$('loading').textContent=`전장 준비 ${Math.round(p*100)}%`;if($('asset-status'))$('asset-status').textContent=`이미지 준비 ${Math.round(p*100)}%`;});this.load.on('loaderror',()=>{storageWarning=true;});
   }
-  create(){scene=this;this.bg=this.add.image(0,0,'background').setDepth(0);this.bases=[this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2),this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2)];this.mounts=[this.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2),this.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2)];this.effects=new CombatEffects(this);this.lines=this.add.graphics().setDepth(9);
+  create(){scene=this;this.bg=this.add.image(0,0,'background').setDepth(0);this.bases=[this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2),this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2)];this.mounting=new FortressMounts(this);this.effects=new CombatEffects(this);this.lines=this.add.graphics().setDepth(9);
     ready=UNITS.every(u=>this.textures.exists(u.key))&&UNITS.filter(u=>!u.boss).every(u=>this.textures.exists(u.key+'-attack')&&this.textures.exists(u.key+'-walk'))&&ERAS.every(e=>this.textures.exists('base-'+e.id)&&this.textures.exists(e.background));
     if(ready){$('loading').remove();$('asset-status')?.remove();lobby.render();}else toast('일부 이미지를 불러오지 못했습니다. 새로고침해 주세요.');if(storageWarning)toast('저장 또는 이미지 정보를 확인해 주세요. 기존 저장 데이터는 덮어쓰지 않았습니다.');
   }
@@ -77,13 +78,14 @@ class Battlefield extends Phaser.Scene{
     const baseKey='base-'+battle.era.id,baseSource=this.textures.get(baseKey).getSourceImage(),fort=fortressLayout(w,h,dpr,baseSource.height/baseSource.width),baseWidth=fort.width;
     for(let team=0;team<2;team++){
       const img=this.bases[team];img.setTexture(baseKey);const height=fort.height,x=fort.centres[team];img.setPosition(x,this.ground+3*dpr).setDisplaySize(baseWidth,height).setFlipX(team===1);if(team===1)img.setTint(0xffd1c5);else img.clearTint();
-      const t=battle.turrets[team],mount=this.mounts[team];mount.setVisible(!!t);if(t){mount.setTexture(t.id);const m=mount.texture.getSourceImage(),fit=mountLayout(fort,this.ground,h,dpr,m.height/m.width,team);mount.setPosition(fit.x-(t.attack>0?(team?-1:1)*4*dpr:0),fit.y).setDisplaySize(fit.width,fit.height).setFlipX(team===1).setAngle(t.attack>0?(team?3:-3):0);if(team)mount.setTint(0xffc6b4);else mount.clearTint();}
     }
+    this.fortLayout={fort,ground:this.ground+3*dpr,dpr,era:battle.era.id,baseKey,bases:this.bases};
   }
   unitHeight(kind){return Math.min((UNITS[kind]?.height??66)*this.unitScale,this.scale.height*.38);}
   update(_,delta){
     if(!ready||!active)return;this.layout();
     if(!paused&&!battle.outcome){this.accumulator+=Math.min(delta/1000,.1)*speed;while(this.accumulator>=1/60){battle.step(1/60);this.accumulator-=1/60;if(battle.outcome)break;}audio.music(battle.time);}
+    this.mounting.render({...this.fortLayout,turrets:battle.turrets});
     const g=this.lines,dpr=this.dpr;g.clear();const live=new Set();
     for(const u of battle.units){
       live.add(u.id);const d=UNITS[u.kind];let a=this.actors.get(u.id);if(!a){a=this.add.sprite(0,0,d.boss?d.key:d.key+'-attack').setOrigin(.5,1);this.actors.set(u.id,a);}
@@ -97,9 +99,9 @@ class Battlefield extends Phaser.Scene{
       if(u.windup>0){g.lineStyle(2*dpr,0xff5f43,.65+.2*Math.sin(battle.time*20));g.strokeEllipse(this.project(u.patternX??u.x),this.ground,180*this.factor,24*this.unitScale);}
     }
     for(const [id,a]of this.actors)if(!live.has(id)){a.destroy();this.actors.delete(id);}
-    for(const e of battle.events.splice(0)){audio.effect(e);this.effects.emit(e,battle.time);if(['meteor-impact','bombard-impact','slam'].includes(e.type))this.shakeUntil=battle.time+.18;if(e.type==='warning'){this.noticeUntil=battle.time+1.5;$('battle-notice').textContent='보스 공격 준비!';$('battle-notice').style.display='block';}if(e.type==='spawn'&&UNITS[e.kind]?.boss){this.noticeUntil=battle.time+3;$('battle-notice').textContent=UNITS[e.kind].name+' 등장!';$('battle-notice').style.display='block';}}
+    for(const e of battle.events.splice(0)){audio.effect(e);this.effects.emit(e,battle.time,{project:this.project,ground:this.ground,unitScale:this.unitScale,weaponOrigin:team=>this.mounting.origin(team)});if(['meteor-impact','bombard-impact','slam'].includes(e.type))this.shakeUntil=battle.time+.18;if(e.type==='warning'){this.noticeUntil=battle.time+1.5;$('battle-notice').textContent='보스 공격 준비!';$('battle-notice').style.display='block';}if(e.type==='spawn'&&UNITS[e.kind]?.boss){this.noticeUntil=battle.time+3;$('battle-notice').textContent=UNITS[e.kind].name+' 등장!';$('battle-notice').style.display='block';}}
     const shake=Math.max(0,(this.shakeUntil??0)-battle.time)/.18;this.cameras.main.setScroll(Math.sin(battle.time*90)*2*dpr*shake,Math.cos(battle.time*75)*dpr*shake);
-    this.effects.render(battle.time,{project:this.project,ground:this.ground,unitScale:this.unitScale,dpr,unitHeight:k=>this.unitHeight(k)});
+    this.effects.render(battle.time,{project:this.project,ground:this.ground,unitScale:this.unitScale,dpr,unitHeight:k=>this.unitHeight(k),weaponOrigin:team=>this.mounting.origin(team)});
     if(battle.time>this.noticeUntil)$('battle-notice').style.display='none';if(this.time.now-this.hudTime>100){updateHud();this.hudTime=this.time.now;}if(battle.outcome&&!resultShown)finish();
   }
 }
@@ -107,5 +109,5 @@ const field=$('field');let currentDpr=Math.min(3,window.devicePixelRatio||1);
 const game=new Phaser.Game({type:Phaser.CANVAS,parent:'field',width:Math.round(390*currentDpr),height:Math.round(330*currentDpr),backgroundColor:'#91bfab',scene:Battlefield,audio:{noAudio:true},render:{antialias:true},scale:{mode:Phaser.Scale.NONE}});
 function resize(){if(field.clientWidth<1||field.clientHeight<1)return;currentDpr=Math.min(3,window.devicePixelRatio||1);game.scale.resize(Math.round(field.clientWidth*currentDpr),Math.round(field.clientHeight*currentDpr));}
 new ResizeObserver(resize).observe(field);window.addEventListener('resize',resize);
-window.__LW={snapshot:()=>({stage:battle.stage,era:battle.era.id,time:battle.time,food:battle.food,trophy:battle.trophy,speed,units:battle.units.map(u=>({id:u.id,kind:u.kind,team:u.team,x:u.x,hp:u.hp,attack:u.attack,moving:u.moving,walkDistance:u.walkDistance,texture:scene?.actors.get(u.id)?.texture.key,renderY:scene?.actors.get(u.id)?.y,frame:scene?.actors.get(u.id)?.frame.name})),outcome:battle.outcome,paused,active,ready,textures:scene?.textures.getTextureKeys(),effects:scene?.effects.active.length,basePositions:WORLD.bases.map(x=>scene?.project?.(x)),fortresses:scene?.bases.map(b=>({x:b.x,y:b.y,width:b.displayWidth,height:b.displayHeight})),mounts:scene?.mounts.map(m=>({x:m.x,y:m.y,width:m.displayWidth,height:m.displayHeight,visible:m.visible})),ground:scene?.ground,progress:structuredClone(progress)})};
+window.__LW={snapshot:()=>({stage:battle.stage,era:battle.era.id,time:battle.time,food:battle.food,trophy:battle.trophy,speed,units:battle.units.map(u=>({id:u.id,kind:u.kind,team:u.team,x:u.x,hp:u.hp,attack:u.attack,moving:u.moving,walkDistance:u.walkDistance,texture:scene?.actors.get(u.id)?.texture.key,renderY:scene?.actors.get(u.id)?.y,frame:scene?.actors.get(u.id)?.frame.name})),outcome:battle.outcome,paused,active,ready,textures:scene?.textures.getTextureKeys(),effects:scene?.effects.active.length,basePositions:WORLD.bases.map(x=>scene?.project?.(x)),fortresses:scene?.bases.map(b=>({x:b.x,y:b.y,width:b.displayWidth,height:b.displayHeight})),mounts:scene?.mounting.snapshot(),ground:scene?.ground,progress:structuredClone(progress)})};
 goLobby();startPwa(toast);
