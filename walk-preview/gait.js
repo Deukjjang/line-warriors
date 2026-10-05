@@ -23,5 +23,26 @@ export function walkPose(distance){
   const f=foot(distance,offset),h={x:i===0?8:-8,y:hip.y},ankle={x:f.sole.x,y:f.sole.y-8.1};
   return {...f,hip:h,ankle,knee:knee(h,ankle)};
  });
- return {phase,hip,legs,lean:.006*Math.sin(2*Math.PI*phase)};
+ const beat=2*Math.PI*phase;
+ return {phase,hip,legs,lean:.012*Math.sin(beat),upper:{
+  torso:.028*Math.sin(beat),
+  head:.025*Math.sin(beat-.65),
+  grip:.045*Math.sin(beat-.4),
+  lift:.8*Math.cos(2*beat-.35)
+ }};
+}
+
+const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
+function turn(x,y,cx,cy,angle){
+ const c=Math.cos(angle),s=Math.sin(angle),dx=x-cx,dy=y-cy;
+ return {x:cx+dx*c-dy*s,y:cy+dx*s+dy*c};
+}
+
+// Smooth skin weights keep the painted neck, shoulders and two-handed grip connected.
+export function upperPoint(x,y,upper){
+ const waist=1-smooth(475,560,y),head=smooth(305,375,x)*(1-smooth(335,420,y));
+ const grip=(1-head)*(1-smooth(460,530,y));
+ const t=turn(x,y,315,530,upper.torso),h=turn(x,y,400,345,upper.head),g=turn(x,y,300,420,upper.grip);
+ return {x:x+waist*(t.x-x)+head*(h.x-x)+grip*(g.x-x),
+  y:y+waist*(t.y-y)+head*(h.y-y)+grip*(g.y-y)+waist*upper.lift/.275};
 }
