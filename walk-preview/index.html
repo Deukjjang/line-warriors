@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>몽둥이병 걷기 샘플</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f8f7;color:#19392f;font-family:system-ui,sans-serif;letter-spacing:0}main{max-width:1040px;margin:auto;padding:24px}header{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid #cad8d2;padding-bottom:18px}h1{font-size:24px;margin:0}small{display:block;color:#526b61;margin-top:4px}.tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}button{cursor:pointer;min-height:40px;min-width:40px;border:1px solid #b4c9bf;background:white;color:inherit;border-radius:4px;font:inherit;display:grid;place-items:center}button[aria-pressed=true]{background:#164e3a;color:#fff}.segment{display:flex}.segment button{border-radius:0}.segment button:first-child{border-radius:4px 0 0 4px}.segment button:last-child{border-radius:0 4px 4px 0}.icon svg{width:18px;height:18px}.stages{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px}h2{font-size:16px;margin:0 0 10px}.stage{display:block;width:100%;height:340px;background:#afce83;border-bottom:3px solid #557343}.poses{margin-top:28px;border-top:1px solid #cad8d2;padding-top:20px}.pose-strip{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}.pose-strip canvas{width:100%;height:auto;aspect-ratio:3/4;border-bottom:2px solid #92ad9f}.pose-number{display:block;text-align:center;color:#526b61;font-size:12px;margin-top:4px}#status{min-height:18px;color:#526b61;font-size:13px;margin-top:12px}@media(max-width:640px){main{padding:16px}header{align-items:flex-start;flex-direction:column;gap:14px}h1{font-size:22px}.stages{grid-template-columns:1fr;gap:18px}.stage{height:285px}.pose-strip{grid-template-columns:repeat(4,minmax(0,1fr))}.poses{margin-top:20px}}
+</style>
+</head>
+<body><main>
+<header><div><h1>몽둥이병</h1><small>걷기 샘플</small></div><div class="tools">
+<button id="pause" class="icon" aria-label="일시정지" title="일시정지"><i data-lucide="pause"></i></button>
+<button id="step" class="icon" aria-label="다음 자세" title="다음 자세"><i data-lucide="step-forward"></i></button>
+<button id="reset" class="icon" aria-label="처음부터" title="처음부터"><i data-lucide="rotate-ccw"></i></button>
+<div class="segment" aria-label="속도"><button data-speed="1" aria-pressed="true">1배</button><button data-speed="2" aria-pressed="false">2배</button></div>
+<div class="segment" aria-label="방향"><button class="icon" data-direction="1" aria-label="오른쪽" title="오른쪽" aria-pressed="true"><i data-lucide="arrow-right"></i></button><button class="icon" data-direction="-1" aria-label="왼쪽" title="왼쪽" aria-pressed="false"><i data-lucide="arrow-left"></i></button></div>
+</div></header>
+<div class="stages"><section><h2>기존</h2><canvas class="stage" id="old"></canvas></section><section><h2>수정 샘플</h2><canvas class="stage" id="new"></canvas></section></div>
+<section class="poses"><h2>8단계 자세</h2><div class="pose-strip" id="poses"></div></section><div id="status" role="status">이미지 준비 중...</div>
+</main><script src="../vendor/lucide.min.js"></script><script type="module" src="preview.js"></script></body>
+</html>
