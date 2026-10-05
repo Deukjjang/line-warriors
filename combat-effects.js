@@ -3,7 +3,7 @@ export class CombatEffects{
   clear(){this.active=[];this.graphics.clear();}
   emit(e,time,layout){
     time=e.emittedAt??time;
-    if(e.type==='shot'&&e.weapon&&layout){
+    if((e.type==='shot'||e.type==='turret-attack')&&e.weapon&&layout){
       const muzzle=layout.weaponOrigin?.(e.team);
       // Store world-space launch coordinates so recoil and later resize cannot drag a fired shot.
       if(muzzle)e={...e,weaponStart:{x:(muzzle.x-layout.project(0))/(layout.project(1)-layout.project(0)),elevation:(layout.ground-muzzle.y)/layout.unitScale}};
@@ -18,15 +18,36 @@ export class CombatEffects{
         const dir=e.team?-1:1,sourceHeight=e.weapon?65*unitScale:unitHeight(e.kind)*.6;
         const muzzle=e.weapon?weaponOrigin?.(e.team):null;
         const sx=e.weaponStart?project(e.weaponStart.x):muzzle?.x??x+dir*18*unitScale,sy=e.weaponStart?ground-e.weaponStart.elevation*unitScale:muzzle?.y??ground-sourceHeight,end=project(e.to),ey=ground-36*unitScale;
-        const arc=e.weapon==='wood-sling'?0:['shell','rock','missile','drone'].includes(e.projectile)?Math.sin(t*Math.PI)*28*unitScale:Math.sin(t*Math.PI)*3*unitScale;
+        const arc=e.weapon?0:['shell','rock','missile','drone'].includes(e.projectile)?Math.sin(t*Math.PI)*28*unitScale:Math.sin(t*Math.PI)*3*unitScale;
         const px=sx+(end-sx)*t,py=sy+(ey-sy)*t-arc;
         const color=e.projectile==='laser'?0x7ffcff:e.projectile==='plasma'?0xffa237:e.projectile==='arrow'?0xd9c3a3:0xffd484;
-        if(e.projectile==='stone'){const length=Math.hypot(end-sx,ey-sy)||1,vx=(end-sx)/length,vy=(ey-sy)/length;g.lineStyle(2*dpr,0xe8e8d6,.4);g.lineBetween(px-vx*12*dpr,py-vy*12*dpr,px,py);g.fillStyle(0xaeb6ab,1);g.fillCircle(px,py,3.2*dpr);g.lineStyle(dpr,0x474c40,1);g.strokeCircle(px,py,3.2*dpr);}
-        else{g.lineStyle((e.projectile==='laser'?4:2)*dpr,color,.85);g.lineBetween(px-dir*18*dpr,py+2*dpr,px,py);g.lineStyle(dpr,0xffffff,1);g.lineBetween(px-dir*8*dpr,py,px,py);if(['shell','plasma','missile'].includes(e.projectile)){g.fillStyle(color,1);g.fillCircle(px,py,4*dpr);}}
+        const length=Math.hypot(end-sx,ey-sy)||1,vx=(end-sx)/length,vy=(ey-sy)/length;
+        if(e.weapon==='laser-turret'){
+          const glow=Math.max(0,1-age/Math.max(.001,e.life)),beam=age<.14?1:glow*.4;
+          for(const [width,c,alpha] of [[10,0x5be6ed,beam*.16],[4,0x7ffcff,beam*.8],[1.5,0xeaffff,beam]]){g.lineStyle(width*dpr,c,alpha);g.lineBetween(sx,sy,end,ey);}
+        }else if(e.projectile==='stone'){g.lineStyle(2*dpr,0xe8e8d6,.4);g.lineBetween(px-vx*12*dpr,py-vy*12*dpr,px,py);g.fillStyle(0xaeb6ab,1);g.fillCircle(px,py,3.2*dpr);g.lineStyle(dpr,0x474c40,1);g.strokeCircle(px,py,3.2*dpr);}
+        else{g.lineStyle((e.projectile==='laser'?4:2)*dpr,color,.85);g.lineBetween(px-vx*18*dpr,py-vy*18*dpr,px,py);g.lineStyle(dpr,0xffffff,1);g.lineBetween(px-vx*8*dpr,py-vy*8*dpr,px,py);if(['shell','plasma','missile'].includes(e.projectile)){g.fillStyle(color,1);g.fillCircle(px,py,4*dpr);}}
         continue;
       }
       if(e.type==='turret-attack'){
-        const muzzle=weaponOrigin?.(e.team);if(!muzzle)continue;
+        const muzzle=e.weaponStart?{x:project(e.weaponStart.x),y:ground-e.weaponStart.elevation*unitScale}:weaponOrigin?.(e.team);if(!muzzle)continue;
+        if(e.weapon!=='wood-sling'){
+          const cannon=e.weapon==='fort-cannon',future=e.weapon==='laser-turret',crossbow=e.weapon==='crossbow';
+          const angle=e.to!==undefined?Math.atan2(ground-36*unitScale-muzzle.y,project(e.to)-muzzle.x):e.team?Math.PI:0;
+          const ax=Math.cos(angle),ay=Math.sin(angle),nx=-ay,ny=ax;
+          const duration=cannon?.14:future?.16:crossbow?.08:.045,flash=Math.max(0,1-age/duration);
+          const point=(along,across)=>({x:muzzle.x+(ax*along+nx*across)*dpr,y:muzzle.y+(ay*along+ny*across)*dpr});
+          if(flash>0){
+            const reach=(cannon?36:future?18:crossbow?12:20)*flash,color=future?0x7ffcff:crossbow?0xd8c7a4:0xffc35b;
+            for(const side of [-1,0,1]){const p=point(reach,side*(cannon?10:4)*flash);g.lineStyle((cannon?6:2)*dpr,color,flash*.85);g.lineBetween(muzzle.x,muzzle.y,p.x,p.y);}
+            const core=point(5*flash,0);g.fillStyle(0xfff5da,flash);g.fillCircle(core.x,core.y,(cannon?6:2)*dpr*flash);
+          }
+          if(cannon){
+            const smoke=Math.max(0,1-age/.5);
+            for(let i=0;i<5&&smoke>0;i++){const p=point(5+i*5+age*28,(i%2?1:-1)*age*8);g.fillStyle(i%2?0xaaa69b:0x646560,smoke*.32);g.fillCircle(p.x,p.y-age*18*dpr,(3+age*16+i*.6)*dpr);}
+          }
+          continue;
+        }
         const color=e.weapon==='laser-turret'?0x7ffcff:0xffd484;
         const dir=e.team?-1:1,burst=Math.max(0,1-age/.22),sling=e.weapon==='wood-sling';
         const angle=sling&&e.to!==undefined?Math.atan2(ground-36*unitScale-muzzle.y,project(e.to)-muzzle.x):e.team?Math.PI:0;

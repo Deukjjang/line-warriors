@@ -1,5 +1,9 @@
 export const WORLD={width:640,bases:[44,596],armyLimit:18};
-const soldier=(id,name,role,cost,hp,damage,range,speed,height,extra={})=>({id,key:id,name,role,cost,hp,damage,range,speed,height,radius:height>85?25:13,windup:.24,recovery:.3,rate:1,cd:cost/22,armor:0,projectile:range>100?'bullet':null,...extra});
+const soldier=(id,name,role,cost,hp,damage,range,speed,height,extra={})=>{
+  const formationRole=['mammoth','knight','armored','tank','robot'].includes(id)?'heavy':['sling','archer','cannon','sniper','drone'].includes(id)?'support':'frontline';
+  const advantage={frontline:'지원병 상대 피해 +40%',support:'중장갑 상대 피해 +40%',heavy:'전선병 상대 피해 +25%'}[formationRole];
+  return {id,key:id,name,role:role+(extra.boss?'':` · ${advantage}`),cost,hp,damage,range,speed,height,formationRole,radius:height>85?25:13,windup:.24,recovery:.3,rate:1,cd:cost/22,armor:0,projectile:range>100?'bullet':null,...extra};
+};
 // Legacy numeric kinds 0..4 remain stable for old battle tooling.
 export const UNITS=[
   soldier('club','몽둥이병','근접 · 전선 유지',15,70,10,25,38,66,{windup:.18,rate:1.05,cd:.65}),
@@ -37,11 +41,11 @@ export const ERAS=[
   {id:'future',name:'미래',roster:[14,15,16],bosses:[23,24],baseHp:3600,income:14,cap:320,startFood:80,background:'bg-future',color:'#ab8ec2'}
 ].map((e,index)=>({...e,index}));
 export const WEAPONS=[
-  {id:'wood-sling',name:'목재 거대 새총',range:210,damage:12,rate:.65,projectile:'stone'},
-  {id:'crossbow',name:'성벽 쇠뇌',range:245,damage:25,rate:.6,projectile:'arrow',pierce:2},
-  {id:'fort-cannon',name:'성벽 대포',range:230,damage:45,rate:.4,projectile:'shell',splash:3},
-  {id:'autocannon',name:'기관포',range:235,damage:20,rate:1.7,projectile:'bullet'},
-  {id:'laser-turret',name:'레이저 포탑',range:260,damage:65,rate:.7,projectile:'laser',pierce:3}
+  {id:'wood-sling',name:'목재 거대 새총',range:210,damage:12,rate:.65,projectile:'stone',prepare:.30,recovery:.35},
+  {id:'crossbow',name:'성벽 쇠뇌',range:245,damage:25,rate:.6,projectile:'arrow',pierce:2,prepare:.26,recovery:.32},
+  {id:'fort-cannon',name:'성벽 대포',range:230,damage:45,rate:.4,projectile:'shell',splash:3,prepare:.14,recovery:.36},
+  {id:'autocannon',name:'기관포',range:235,damage:20,rate:1.7,projectile:'bullet',prepare:.08,recovery:.28,burst:3},
+  {id:'laser-turret',name:'레이저 포탑',range:260,damage:65,rate:.7,projectile:'laser',pierce:3,prepare:.32,recovery:.32}
 ];
 export const SKILLS=[
   {id:'meteor',name:'운석',cost:60,cd:18,price:0,era:0,icon:'flame',detail:'착탄 지점의 적에게 광역 피해'},
@@ -57,5 +61,6 @@ export function stageData(stage){
   if(!Number.isInteger(stage)||stage<1||stage>50)throw new Error('Invalid stage');
   const era=ERAS[Math.floor((stage-1)/10)],local=(stage-1)%10+1;
   const mixes=[[.8,.2,0],[.65,.35,0],[.55,.4,.05],[.45,.35,.2],[.55,.35,.1],[.4,.45,.15],[.35,.4,.25],[.4,.3,.3],[.3,.35,.35],[.4,.35,.25]];
-  return {stage,local,era,roster:era.roster,boss:local%5===0?era.bosses[local===5?0:1]:null,enemyMix:mixes[local-1],enemyScale:1+(local-1)*.035,enemyIncome:(4+local*.28)*(local%5===0?.74:1)*(1+era.index*.17),enemyBase:Math.round(era.baseHp*(.6+local*.08)),enemyWeapon:local>=4};
+  const patterns=[[0,0,1,2,1],[0,1,0,2,1],[0,1,0,2,1],[0,1,2,1,0],[0,1,0,1,2],[0,2,1,0,1],[0,1,2,0,2],[0,2,1,1,0],[0,1,2,1,2],[0,1,0,2,1]];
+  return {stage,local,era,roster:era.roster,boss:local%5===0?era.bosses[local===5?0:1]:null,enemyMix:mixes[local-1],enemyPattern:patterns[local-1],enemyWave:{period:local<=2?7:8,active:3.2,interval:.6},enemyScale:1+(local-1)*.012,enemyIncome:era.income*(1.06+local*.012)*(local%5===0?.90:1),enemyBase:Math.round(era.baseHp*(.92+local*.018)),enemyWeapon:local>=4};
 }
