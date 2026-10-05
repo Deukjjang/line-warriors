@@ -50,7 +50,7 @@ export class Battle{
     if(target){const candidates=this.units.filter(v=>v.team!==strike.team&&v.hp>0&&v.id!==target.id&&Math.abs(v.x-target.x)<(d.pierce?85:65)).sort((a,b)=>Math.abs(a.x-target.x)-Math.abs(b.x-target.x));const victims=[target,...candidates.slice(0,Math.max(0,(d.splash||d.pierce||1)-1))];for(const v of victims)this.hurt(v,strike.damage*(UNITS[v.kind].boss?.75:1)*(v===target?1:.65),d.ignoreArmor);}
     else this.base[1-strike.team]-=strike.damage*(strike.team===1&&this.shield>0?.6:1);this.events.push({...strike,type:'impact',x:target?target.x:strike.to});
   }
-  launch(strike,d){strike={...strike,projectile:d.projectile};if(d.projectile){const flight=Math.max(.08,Math.abs(strike.to-strike.x)/(d.projectile==='stone'?780:d.projectile==='shell'?520:1300));this.projectiles.push({...strike,remaining:flight});this.events.push({...strike,type:'shot',flight});}else this.impact(strike);}
+  launch(strike,d){strike={...strike,projectile:d.projectile};if(d.projectile){const flight=Math.max(.08,Math.abs(strike.to-strike.x)/(d.projectile==='stone'?780:d.projectile==='shell'?520:1300));this.projectiles.push({...strike,remaining:flight});this.events.push({...strike,type:'shot',flight,emittedAt:this.time});}else this.impact(strike);}
   step(dt){
     if(this.outcome||this.paused)return;dt=Math.min(Math.max(dt,0),.1);this.time+=dt;this.food=Math.min(this.cap,this.food+this.income*dt);this.trophy=Math.min(120,this.trophy+.7*dt);this.rush=Math.max(0,this.rush-dt);this.shield=Math.max(0,this.shield-dt);this.cd=this.cd.map(v=>Math.max(0,v-dt));this.skillCd=this.skillCd.map(v=>Math.max(0,v-dt));
     for(const p of this.projectiles){p.remaining-=dt;if(p.remaining<=0)this.impact(p);}this.projectiles=this.projectiles.filter(p=>p.remaining>0);
@@ -58,7 +58,25 @@ export class Battle{
     if(this.data.boss!==null&&!this.bossSpawned&&this.time>=20){this.add(this.data.boss,1);this.bossSpawned=true;}
     this.enemyFood=Math.min(this.cap,this.enemyFood+this.data.enemyIncome*dt);this.enemyTimer-=dt;
     if(this.enemyTimer<=0){const r=this.random(),mix=this.data.enemyMix,slot=r<mix[0]?0:r<mix[0]+mix[1]?1:2,kind=this.roster[slot];if(this.enemyFood>=UNITS[kind].cost&&this.count(1)<18){this.enemyFood-=UNITS[kind].cost;this.add(kind,1);}this.enemyTimer=.9+this.random()*.8;}
-    for(const [team,t] of this.turrets.entries()){if(!t)continue;t.cd-=dt;t.attack=Math.max(0,t.attack-dt);const target=this.units.filter(u=>u.team!==team&&u.hp>0&&Math.abs(u.x-WORLD.bases[team])<=t.range).sort((a,b)=>Math.abs(a.x-WORLD.bases[team])-Math.abs(b.x-WORLD.bases[team]))[0];if(target&&t.cd<=0){t.cd=1/t.rate;t.attack=.35;this.events.push({type:'turret-attack',x:WORLD.bases[team],weapon:t.id,team});this.launch({id:'turret-'+team,weapon:t.id,x:WORLD.bases[team],to:target.x,targetId:target.id,damage:t.damage,team},t);}}
+    for(const [team,t] of this.turrets.entries()){
+      if(!t)continue;t.cd-=dt;t.attack=Math.max(0,t.attack-dt);
+      const target=this.units.filter(u=>u.team!==team&&u.hp>0&&Math.abs(u.x-WORLD.bases[team])<=t.range).sort((a,b)=>Math.abs(a.x-WORLD.bases[team])-Math.abs(b.x-WORLD.bases[team]))[0];
+      if(t.sling){
+        t.sling.elapsed+=dt;
+        if(!t.sling.released&&t.sling.elapsed>=.30){
+          t.sling.released=true;t.attack=.35;
+          this.events.push({type:'turret-attack',x:WORLD.bases[team],to:t.sling.strike.to,weapon:t.id,team,emittedAt:this.time});
+          this.launch(t.sling.strike,t);
+        }
+        if(t.sling.elapsed>=.65)t.sling=null;
+      }
+      if(target&&t.cd<=0&&!t.sling){
+        t.cd=1/t.rate;
+        const strike={id:'turret-'+team,weapon:t.id,x:WORLD.bases[team],to:target.x,targetId:target.id,damage:t.damage,team};
+        if(t.id==='wood-sling'){t.aimX=target.x;t.sling={elapsed:0,released:false,strike};}
+        else{t.attack=.35;this.events.push({type:'turret-attack',x:WORLD.bases[team],to:target.x,weapon:t.id,team,emittedAt:this.time});this.launch(strike,t);}
+      }
+    }
     for(const u of this.units){
       if(u.hp<=0)continue;u.moving=false;const d=UNITS[u.kind],direction=u.team?-1:1,boost=u.team===0&&this.rush>0?1.6:1;u.attackFlash=Math.max(0,u.attackFlash-dt);u.hurt=Math.max(0,u.hurt-dt);u.bossShield=Math.max(0,u.bossShield-dt);u.cooldown-=dt*boost;
       if(u.attack){const a=u.attack;a.elapsed+=dt*boost;if(!a.released&&a.elapsed>=d.windup){a.released=true;u.attackFlash=.16;this.launch({id:u.id,kind:u.kind,x:u.x,to:a.to,targetId:a.targetId,damage:u.damage,team:u.team},d);}if(a.elapsed>=d.windup+d.recovery)u.attack=null;continue;}

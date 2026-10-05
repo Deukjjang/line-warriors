@@ -2,6 +2,7 @@ export class CombatEffects{
   constructor(scene){this.scene=scene;this.graphics=scene.add.graphics().setDepth(7);this.active=[];}
   clear(){this.active=[];this.graphics.clear();}
   emit(e,time,layout){
+    time=e.emittedAt??time;
     if(e.type==='shot'&&e.weapon&&layout){
       const muzzle=layout.weaponOrigin?.(e.team);
       // Store world-space launch coordinates so recoil and later resize cannot drag a fired shot.
@@ -17,10 +18,10 @@ export class CombatEffects{
         const dir=e.team?-1:1,sourceHeight=e.weapon?65*unitScale:unitHeight(e.kind)*.6;
         const muzzle=e.weapon?weaponOrigin?.(e.team):null;
         const sx=e.weaponStart?project(e.weaponStart.x):muzzle?.x??x+dir*18*unitScale,sy=e.weaponStart?ground-e.weaponStart.elevation*unitScale:muzzle?.y??ground-sourceHeight,end=project(e.to),ey=ground-36*unitScale;
-        const arc=['shell','rock','missile','drone'].includes(e.projectile)?Math.sin(t*Math.PI)*28*unitScale:Math.sin(t*Math.PI)*3*unitScale;
+        const arc=e.weapon==='wood-sling'?0:['shell','rock','missile','drone'].includes(e.projectile)?Math.sin(t*Math.PI)*28*unitScale:Math.sin(t*Math.PI)*3*unitScale;
         const px=sx+(end-sx)*t,py=sy+(ey-sy)*t-arc;
         const color=e.projectile==='laser'?0x7ffcff:e.projectile==='plasma'?0xffa237:e.projectile==='arrow'?0xd9c3a3:0xffd484;
-        if(e.projectile==='stone'){g.lineStyle(2*dpr,0xe8e8d6,.4);g.lineBetween(px-dir*12*dpr,py,px,py);g.fillStyle(0xaeb6ab,1);g.fillCircle(px,py,3.2*dpr);g.lineStyle(dpr,0x474c40,1);g.strokeCircle(px,py,3.2*dpr);}
+        if(e.projectile==='stone'){const length=Math.hypot(end-sx,ey-sy)||1,vx=(end-sx)/length,vy=(ey-sy)/length;g.lineStyle(2*dpr,0xe8e8d6,.4);g.lineBetween(px-vx*12*dpr,py-vy*12*dpr,px,py);g.fillStyle(0xaeb6ab,1);g.fillCircle(px,py,3.2*dpr);g.lineStyle(dpr,0x474c40,1);g.strokeCircle(px,py,3.2*dpr);}
         else{g.lineStyle((e.projectile==='laser'?4:2)*dpr,color,.85);g.lineBetween(px-dir*18*dpr,py+2*dpr,px,py);g.lineStyle(dpr,0xffffff,1);g.lineBetween(px-dir*8*dpr,py,px,py);if(['shell','plasma','missile'].includes(e.projectile)){g.fillStyle(color,1);g.fillCircle(px,py,4*dpr);}}
         continue;
       }
@@ -28,10 +29,11 @@ export class CombatEffects{
         const muzzle=weaponOrigin?.(e.team);if(!muzzle)continue;
         const color=e.weapon==='laser-turret'?0x7ffcff:0xffd484;
         const dir=e.team?-1:1,burst=Math.max(0,1-age/.22),sling=e.weapon==='wood-sling';
+        const angle=sling&&e.to!==undefined?Math.atan2(ground-36*unitScale-muzzle.y,project(e.to)-muzzle.x):e.team?Math.PI:0;
         for(let i=0;i<7;i++){
-          const a=(i-3)*.16,reach=(10+26*t)*dpr;
+          const a=angle+(i-3)*.16,reach=(10+26*t)*dpr;
           g.lineStyle((sling?1.5:3)*dpr,color,burst*.8);
-          g.lineBetween(muzzle.x+dir*4*dpr,muzzle.y,muzzle.x+dir*Math.cos(a)*reach,muzzle.y+Math.sin(a)*reach);
+          g.lineBetween(muzzle.x+Math.cos(angle)*4*dpr,muzzle.y+Math.sin(angle)*4*dpr,muzzle.x+Math.cos(a)*reach,muzzle.y+Math.sin(a)*reach);
         }
         if(!sling){g.fillStyle(0xffffff,burst);g.fillEllipse(muzzle.x+dir*7*dpr,muzzle.y,22*dpr*burst,9*dpr*burst);}
         for(let i=0;i<4;i++){

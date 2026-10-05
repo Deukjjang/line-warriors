@@ -16,18 +16,32 @@ export function installedMount(fort,ground,dpr,aspect,team,era){
   return {x,y:surfaceY+height*embed,width,height,surfaceY,coverY:surfaceY+height*.025,dpr};
 }
 
-export function weaponParts(fit,team,attack,era,cooldown=0){
+export function weaponParts(fit,team,attack,era,cooldown=0,target,cycle){
   const p=MOUNT_PROFILES[era],dir=team?-1:1;
-  const recoil=attack>0?Math.sin(Math.PI*Math.max(0,Math.min(1,(.35-attack)/.35)))*Math.min(fit.width*.028,3*fit.dpr):0;
+  const recoil=era==='prehistoric'&&cycle!==undefined?0:attack>0?Math.sin(Math.PI*Math.max(0,Math.min(1,(.35-attack)/.35)))*Math.min(fit.width*.028,3*fit.dpr):0;
   const head={x:fit.x-dir*recoil,y:fit.y-fit.height*(1-p.split),width:fit.width,height:fit.height*p.split,angle:0};
   const elapsed=.35-attack;
   const draw=attack>0?Math.cos(Math.PI*Math.min(1,elapsed/.12))*Math.exp(-elapsed*18):cooldown>0&&cooldown<.3?1-cooldown/.3:0;
-  const sling=era==='prehistoric'?{
+  let sling=era==='prehistoric'?{
     pouch:{x:head.x-dir*fit.width*(.30+.16*draw),y:fit.y-fit.height*.48},
     forks:[{x:head.x+dir*fit.width*.12,y:fit.y-fit.height*.87},{x:head.x+dir*fit.width*.37,y:fit.y-fit.height*.85}],draw
   }:null;
-  return {sling,base:{x:fit.x,y:fit.y,width:fit.width,height:fit.height*(1-p.split+.04),angle:0},head,
-    muzzle:{x:head.x+dir*(p.muzzle[0]-.5)*fit.width,y:fit.y-(1-p.muzzle[1])*fit.height}};
+  let muzzle={x:head.x+dir*(p.muzzle[0]-.5)*fit.width,y:fit.y-(1-p.muzzle[1])*fit.height};
+  if(sling&&cycle!==undefined){
+    muzzle={x:fit.x+dir*fit.width*.245,y:fit.y-fit.height*.86};
+    const aim=target??{x:muzzle.x+dir*300,y:muzzle.y+80},dx=aim.x-muzzle.x,dy=aim.y-muzzle.y,length=Math.hypot(dx,dy)||1;
+    const axis={x:dx/length,y:dy/length},elapsed=cycle?.elapsed??0;
+    let pull=.12,phase='idle';
+    if(cycle){
+      if(elapsed<.22){const p=elapsed/.22;pull=.12+.30*p*p*(3-2*p);phase='draw';}
+      else if(elapsed<.30){const p=(elapsed-.22)/.08;pull=.42*(1-p*p);phase='release';}
+      else{const p=Math.min(1,(elapsed-.30)/.35);pull=.12*p+.025*Math.sin(p*Math.PI*6)*(1-p);phase='recover';}
+    }
+    sling={...sling,axis,phase,loaded:!!cycle&&elapsed<.30,draw:pull,
+      pouch:{x:muzzle.x-axis.x*fit.width*pull,y:muzzle.y-axis.y*fit.width*pull},
+      flutter:phase==='recover'?Math.sin((elapsed-.30)*55)*Math.exp(-(elapsed-.30)*10)*fit.width*.025:0};
+  }
+  return {sling,base:{x:fit.x,y:fit.y,width:fit.width,height:fit.height*(1-p.split+.04),angle:0},head,muzzle};
 }
 
 export class FortressMounts{
@@ -36,6 +50,7 @@ export class FortressMounts{
     this.contact=scene.add.graphics().setDepth(2.1);
     this.fasteners=scene.add.graphics().setDepth(2.35);
     this.cords=scene.add.graphics().setDepth(2.25);
+    this.stones=scene.add.graphics().setDepth(2.27);
     this.actors=[0,1].map(()=>({
       base:scene.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.15),
       head:scene.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2),
@@ -56,15 +71,17 @@ export class FortressMounts{
       if(era==='prehistoric')t.add('installed-pouch',0,0,Math.round(s.height*.40),Math.round(s.width*.35),Math.round(s.height*.24));
     }
   }
-  render({fort,ground,dpr,era,baseKey,bases,turrets}){
-    this.contact.clear();this.fasteners.clear();this.cords.clear();this.states=[];
+  render({fort,ground,dpr,era,baseKey,bases,turrets,project,unitScale}){
+    this.contact.clear();this.fasteners.clear();this.cords.clear();this.stones.clear();this.states=[];
     const p=MOUNT_PROFILES[era],source=this.scene.textures.get(baseKey).getSourceImage();
     for(let team=0;team<2;team++){
       const a=this.actors[team],t=turrets[team];
       for(const image of Object.values(a))image.setVisible(!!t);
       if(!t){this.states.push({visible:false});continue;}
       this.frames(t.id,era);const s=this.scene.textures.get(t.id).getSourceImage();
-      const fit=installedMount(fort,ground,dpr,s.height/s.width,team,era),parts=weaponParts(fit,team,t.attack,era,t.cd);
+      const fit=installedMount(fort,ground,dpr,s.height/s.width,team,era);
+      const aim=project&&t.aimX!==undefined?{x:project(t.aimX),y:ground-3*dpr-36*unitScale}:undefined;
+      const parts=weaponParts(fit,team,t.attack,era,t.cd,aim,t.sling??null);
       for(const key of ['base','head']){
         const v=parts[key],img=a[key];img.setTexture(t.id,'installed-'+key).setPosition(v.x,v.y).setDisplaySize(v.width,v.height).setFlipX(team===1).setAngle(0);
         if(team)img.setTint(0xffc6b4);else img.clearTint();
@@ -80,7 +97,11 @@ export class FortressMounts{
         polygon(masks.head,[[.58,.01],[.72,0],[.76,.16],[.80,.32],[.83,.28],[.83,.01],[1,0],[1,.27],[.86,.48],[.71,.73],[.47,.73],[.56,.53],[.65,.36]],(x,y)=>({x:parts.head.x+dir*(x-.5)*fit.width,y:fit.y+(y-1)*fit.height}));
         polygon(masks.pouch,[[.01,.46],[.12,.49],[.22,.49],[.30,.46],[.30,.57],[.22,.63],[.13,.64],[.05,.58]],(x,y)=>({x:pouch.x+dir*(x-.175)*fit.width,y:pouch.y+(y-.52)*fit.height}));
         a.head.setMask(masks.headMask);a.pouch.setMask(masks.pouchMask);
-        for(const f of forks){g.lineStyle(4*dpr,0x38251b,1);g.lineBetween(f.x,f.y,pouch.x,pouch.y);g.lineStyle(2*dpr,0xd0ac74,1);g.lineBetween(f.x,f.y,pouch.x,pouch.y);}
+        for(const f of forks){
+          const mx=(f.x+pouch.x)/2,my=(f.y+pouch.y)/2+(parts.sling.flutter??0);
+          for(const [width,color] of [[4,0x38251b],[2,0xd0ac74]]){g.lineStyle(width*dpr,color,1);g.beginPath();g.moveTo(f.x,f.y);g.lineTo(mx,my);g.lineTo(pouch.x,pouch.y);g.strokePath();}
+        }
+        if(parts.sling.loaded){this.stones.fillStyle(0x414b43,1);this.stones.fillCircle(pouch.x,pouch.y,fit.width*.054);this.stones.fillStyle(0xb5bfae,1);this.stones.fillCircle(pouch.x-dpr,pouch.y-dpr,fit.width*.039);}
       }else{a.head.setCrop().clearMask();a.pouch.setVisible(false).clearMask();}
       // Reuse the actual wall face in front of the mount foot, preserving its texture and perspective.
       const wall=bases[team],cropY=Math.round((fit.coverY-(ground-fort.height))/fort.height*source.height);

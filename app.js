@@ -85,7 +85,7 @@ class Battlefield extends Phaser.Scene{
   update(_,delta){
     if(!ready||!active)return;this.layout();
     if(!paused&&!battle.outcome){this.accumulator+=Math.min(delta/1000,.1)*speed;while(this.accumulator>=1/60){battle.step(1/60);this.accumulator-=1/60;if(battle.outcome)break;}audio.music(battle.time);}
-    this.mounting.render({...this.fortLayout,turrets:battle.turrets});
+    this.mounting.render({...this.fortLayout,turrets:battle.turrets,project:this.project,unitScale:this.unitScale});
     const g=this.lines,dpr=this.dpr;g.clear();const live=new Set();
     for(const u of battle.units){
       live.add(u.id);const d=UNITS[u.kind];let a=this.actors.get(u.id);if(!a){a=this.add.sprite(0,0,d.boss?d.key:d.key+'-attack').setOrigin(.5,1);this.actors.set(u.id,a);}
