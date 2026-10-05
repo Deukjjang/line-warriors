@@ -6,7 +6,7 @@ import {CombatEffects} from './combat-effects.js';
 import {BattleAudio} from './audio.js';
 import {VERSION} from './version.js';
 import {startPwa} from './pwa.js';
-import {fortressLayout,unitPose} from './movement.js';
+import {fortressLayout,unitPose,TRAVEL_FRAME} from './movement.js';
 import {FortressMounts} from './mounting.js';
 const $=id=>document.getElementById(id),icon=id=>`<i data-lucide="${id}"></i>`,icons=()=>window.lucide.createIcons();
 let progress=freshSave(),storageWarning=false,storageBlocked=false;
@@ -64,11 +64,13 @@ class Battlefield extends Phaser.Scene{
     const keys=[...UNITS.map(u=>u.key),'ally','enemy',...ERAS.map(e=>e.background),...ERAS.map(e=>'base-'+e.id),...WEAPONS.map(w=>w.id)];
     for(const key of keys)this.load.image(key,`assets-v3/${key}.png`);
     for(const u of UNITS.filter(u=>!u.boss))this.load.spritesheet(u.key+'-attack',`assets-v3/motions/${u.key}.png`,{frameWidth:768,frameHeight:512});
-    for(const u of UNITS.filter(u=>!u.boss&&!u.air))this.load.spritesheet(u.key+'-walk',`assets-v4/walk/${u.key}.png`,{frameWidth:768,frameHeight:512});
+    for(const u of UNITS)this.load.spritesheet(u.key+(u.air?'-flight':'-walk'),`assets-v5/travel/${u.key}.png`,{frameWidth:TRAVEL_FRAME.width,frameHeight:TRAVEL_FRAME.height});
+    this.load.json('travel-meta','assets-v5/travel/metadata.json');
     this.load.on('progress',p=>{$('loading').textContent=`전장 준비 ${Math.round(p*100)}%`;if($('asset-status'))$('asset-status').textContent=`이미지 준비 ${Math.round(p*100)}%`;});this.load.on('loaderror',()=>{storageWarning=true;});
   }
   create(){scene=this;this.bg=this.add.image(0,0,'background').setDepth(0);this.bases=[this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2),this.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2)];this.mounting=new FortressMounts(this);this.effects=new CombatEffects(this);this.lines=this.add.graphics().setDepth(9);
-    ready=UNITS.every(u=>this.textures.exists(u.key))&&UNITS.filter(u=>!u.boss).every(u=>this.textures.exists(u.key+'-attack')&&this.textures.exists(u.key+'-walk'))&&ERAS.every(e=>this.textures.exists('base-'+e.id)&&this.textures.exists(e.background));
+    this.travel=this.cache.json.get('travel-meta');
+    ready=!!this.travel&&UNITS.every(u=>this.textures.exists(u.key)&&this.textures.exists(u.key+(u.air?'-flight':'-walk'))&&this.travel[u.key])&&UNITS.filter(u=>!u.boss).every(u=>this.textures.exists(u.key+'-attack'))&&ERAS.every(e=>this.textures.exists('base-'+e.id)&&this.textures.exists(e.background));
     if(ready){$('loading').remove();$('asset-status')?.remove();lobby.render();}else toast('일부 이미지를 불러오지 못했습니다. 새로고침해 주세요.');if(storageWarning)toast('저장 또는 이미지 정보를 확인해 주세요. 기존 저장 데이터는 덮어쓰지 않았습니다.');
   }
   clearActors(){for(const a of this.actors.values())a.destroy();this.actors.clear();this.effects?.clear();this.accumulator=0;this.noticeUntil=0;this.shakeUntil=0;this.cameras.main.setScroll(0,0);$('battle-notice').style.display='none';}
@@ -89,9 +91,11 @@ class Battlefield extends Phaser.Scene{
     const g=this.lines,dpr=this.dpr;g.clear();const live=new Set();
     for(const u of battle.units){
       live.add(u.id);const d=UNITS[u.kind];let a=this.actors.get(u.id);if(!a){a=this.add.sprite(0,0,d.boss?d.key:d.key+'-attack').setOrigin(.5,1);this.actors.set(u.id,a);}
-      const pose=unitPose(d,u),phase=pose.phase;if(a.texture.key!==pose.texture)a.setTexture(pose.texture);if(!d.boss)a.setFrame(pose.frame);
-      const direction=u.team?-1:1,lunge=phase===2?(d.projectile?-4:d.key==='mammoth'?10:6):phase===1?-2:0,x=this.project(u.x),height=this.unitHeight(u.kind),air=d.air?25*this.unitScale:0,y=this.ground+(u.id%3)*3*dpr-air+(d.air?Math.sin(battle.time*5+u.id)*2*dpr:0);
-      a.setFlipX(u.team===1).setDisplaySize(height*a.frame.realWidth/a.frame.realHeight,height).setPosition(x+direction*(lunge-(u.hurt>0?4:0))*dpr,y).setAngle(d.boss?direction*(phase===2?7:phase===1?-4:0):0).setDepth(3+(u.id%3)*.1);
+      const height=this.unitHeight(u.kind),travelHeight=height/this.travel[d.key].scale,stride=this.travel[d.key].stride/TRAVEL_FRAME.height*travelHeight/this.factor;
+      const pose=unitPose(d,u,{stride,time:battle.time}),phase=pose.phase;if(a.texture.key!==pose.texture)a.setTexture(pose.texture);if(!d.boss||d.air||u.moving&&!u.attack)a.setFrame(pose.frame);
+      const direction=u.team?-1:1,lunge=phase===2?(d.projectile?-4:d.key==='mammoth'?10:6):phase===1?-2:0,x=this.project(u.x),air=d.air?25*this.unitScale:0,y=this.ground+(u.id%3)*3*dpr-air+(d.air?Math.sin(battle.time*5+u.id)*2*dpr:0);
+      const drawHeight=d.air||u.moving&&!u.attack?travelHeight:height;
+      a.setFlipX(u.team===1).setDisplaySize(drawHeight*a.frame.realWidth/a.frame.realHeight,drawHeight).setPosition(x+direction*(lunge-(u.hurt>0?4:0))*dpr,y).setAngle(d.boss?direction*(phase===2?7:phase===1?-4:0):0).setDepth(3+(u.id%3)*.1);
       if(u.hurt>0)a.setTint(0xffb59c);else if(u.team===1)a.setTint(0xffddd0);else a.clearTint();g.fillStyle(u.team?0xa14d41:0x204d35,.28);g.fillEllipse(x,this.ground+4*dpr,26*this.unitScale,5*dpr);
       if(u.hp<u.maxHp||d.boss){const width=(d.boss?54:30)*this.unitScale;g.fillStyle(0x25372a,.8);g.fillRect(x-width/2,y-height-7*dpr,width,4*dpr);g.fillStyle(u.team?0xec7563:0x7bd591,1);g.fillRect(x-width/2,y-height-7*dpr,width*Math.max(0,u.hp/u.maxHp),4*dpr);}
       if(battle.shield>0&&u.team===0||u.bossShield>0){g.lineStyle(2*dpr,0x8dd9ff,.7);g.strokeEllipse(x,y-height/2,height*.85,height*1.08);}
