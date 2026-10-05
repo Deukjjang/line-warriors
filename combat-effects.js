@@ -27,6 +27,17 @@ export class CombatEffects{
       if(e.type==='turret-attack'){
         const muzzle=weaponOrigin?.(e.team);if(!muzzle)continue;
         const color=e.weapon==='laser-turret'?0x7ffcff:0xffd484;
+        const dir=e.team?-1:1,burst=Math.max(0,1-age/.22),sling=e.weapon==='wood-sling';
+        for(let i=0;i<7;i++){
+          const a=(i-3)*.16,reach=(10+26*t)*dpr;
+          g.lineStyle((sling?1.5:3)*dpr,color,burst*.8);
+          g.lineBetween(muzzle.x+dir*4*dpr,muzzle.y,muzzle.x+dir*Math.cos(a)*reach,muzzle.y+Math.sin(a)*reach);
+        }
+        if(!sling){g.fillStyle(0xffffff,burst);g.fillEllipse(muzzle.x+dir*7*dpr,muzzle.y,22*dpr*burst,9*dpr*burst);}
+        for(let i=0;i<4;i++){
+          g.fillStyle(sling?0xd9bc8b:e.weapon==='laser-turret'?0x6ce6ed:0xb0b4ac,fade*.22);
+          g.fillCircle(muzzle.x-dir*(3+i*4)*dpr,muzzle.y-(i*3+age*18)*dpr,(2+5*t)*dpr);
+        }
         g.fillStyle(color,fade*.9);g.fillCircle(muzzle.x,muzzle.y,(4+3*t)*dpr*fade);
         g.lineStyle(dpr,0xfff2cd,fade);g.strokeCircle(muzzle.x,muzzle.y,(4+10*t)*dpr);continue;
       }

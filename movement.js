@@ -1,5 +1,5 @@
-export function fortressLayout(width,height,dpr,aspect){
-  const size=Math.min(width*.52,440*dpr,height*.72/aspect);
+export function fortressLayout(width,height,dpr,aspect,mobile=width/dpr<=960){
+  const size=Math.min(width*.52,440*dpr,height*.72/aspect)*(mobile?.88:1);
   return {width:size,height:size*aspect,centres:[0,width],mounts:[size*.27,width-size*.27]};
 }
 

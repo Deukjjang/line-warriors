@@ -9,18 +9,24 @@ export const MOUNT_PROFILES={
 
 export function installedMount(fort,ground,dpr,aspect,team,era){
   const p=MOUNT_PROFILES[era],surfaceY=ground-fort.height*(1-p.roof);
-  const embed=.16;
+  const embed=era==='prehistoric'?.23:.16;
   const height=Math.min(fort.width*.29*aspect,Math.max(1,(surfaceY-56*dpr)/(1-embed)));
   const width=height/aspect;
   const x=fort.centres[team]+(team?-1:1)*fort.width*p.offset;
   return {x,y:surfaceY+height*embed,width,height,surfaceY,coverY:surfaceY+height*.025,dpr};
 }
 
-export function weaponParts(fit,team,attack,era){
+export function weaponParts(fit,team,attack,era,cooldown=0){
   const p=MOUNT_PROFILES[era],dir=team?-1:1;
   const recoil=attack>0?Math.sin(Math.PI*Math.max(0,Math.min(1,(.35-attack)/.35)))*Math.min(fit.width*.028,3*fit.dpr):0;
   const head={x:fit.x-dir*recoil,y:fit.y-fit.height*(1-p.split),width:fit.width,height:fit.height*p.split,angle:0};
-  return {base:{x:fit.x,y:fit.y,width:fit.width,height:fit.height*(1-p.split+.04),angle:0},head,
+  const elapsed=.35-attack;
+  const draw=attack>0?Math.cos(Math.PI*Math.min(1,elapsed/.12))*Math.exp(-elapsed*18):cooldown>0&&cooldown<.3?1-cooldown/.3:0;
+  const sling=era==='prehistoric'?{
+    pouch:{x:head.x-dir*fit.width*(.30+.16*draw),y:fit.y-fit.height*.48},
+    forks:[{x:head.x+dir*fit.width*.12,y:fit.y-fit.height*.87},{x:head.x+dir*fit.width*.37,y:fit.y-fit.height*.85}],draw
+  }:null;
+  return {sling,base:{x:fit.x,y:fit.y,width:fit.width,height:fit.height*(1-p.split+.04),angle:0},head,
     muzzle:{x:head.x+dir*(p.muzzle[0]-.5)*fit.width,y:fit.y-(1-p.muzzle[1])*fit.height}};
 }
 
@@ -29,11 +35,17 @@ export class FortressMounts{
     this.scene=scene;this.states=[];
     this.contact=scene.add.graphics().setDepth(2.1);
     this.fasteners=scene.add.graphics().setDepth(2.35);
+    this.cords=scene.add.graphics().setDepth(2.25);
     this.actors=[0,1].map(()=>({
       base:scene.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.15),
       head:scene.add.image(0,0,'wood-sling').setOrigin(.5,1).setDepth(2.2),
+      pouch:scene.add.image(0,0,'wood-sling').setOrigin(.5,.5).setDepth(2.26),
       wall:scene.add.image(0,0,'base-prehistoric').setOrigin(.5,1).setDepth(2.3)
     }));
+    this.masks=this.actors.map(a=>{
+      const head=scene.add.graphics().setVisible(false),pouch=scene.add.graphics().setVisible(false);
+      return {head,pouch,headMask:head.createGeometryMask(),pouchMask:pouch.createGeometryMask()};
+    });
   }
   frames(key,era){
     const t=this.scene.textures.get(key),s=t.getSourceImage(),p=MOUNT_PROFILES[era];
@@ -41,21 +53,35 @@ export class FortressMounts{
       const split=Math.round(s.height*p.split),cut=Math.round(s.height*(p.split-.04));
       t.add('installed-head',0,0,0,s.width,split);
       t.add('installed-base',0,0,cut,s.width,s.height-cut);
+      if(era==='prehistoric')t.add('installed-pouch',0,0,Math.round(s.height*.40),Math.round(s.width*.35),Math.round(s.height*.24));
     }
   }
   render({fort,ground,dpr,era,baseKey,bases,turrets}){
-    this.contact.clear();this.fasteners.clear();this.states=[];
+    this.contact.clear();this.fasteners.clear();this.cords.clear();this.states=[];
     const p=MOUNT_PROFILES[era],source=this.scene.textures.get(baseKey).getSourceImage();
     for(let team=0;team<2;team++){
       const a=this.actors[team],t=turrets[team];
       for(const image of Object.values(a))image.setVisible(!!t);
       if(!t){this.states.push({visible:false});continue;}
       this.frames(t.id,era);const s=this.scene.textures.get(t.id).getSourceImage();
-      const fit=installedMount(fort,ground,dpr,s.height/s.width,team,era),parts=weaponParts(fit,team,t.attack,era);
+      const fit=installedMount(fort,ground,dpr,s.height/s.width,team,era),parts=weaponParts(fit,team,t.attack,era,t.cd);
       for(const key of ['base','head']){
         const v=parts[key],img=a[key];img.setTexture(t.id,'installed-'+key).setPosition(v.x,v.y).setDisplaySize(v.width,v.height).setFlipX(team===1).setAngle(0);
         if(team)img.setTint(0xffc6b4);else img.clearTint();
       }
+      if(parts.sling){
+        a.head.setCrop();
+        const {pouch,forks}=parts.sling,g=this.cords;
+        a.pouch.setTexture(t.id,'installed-pouch').setPosition(pouch.x,pouch.y).setDisplaySize(fit.width*.35,fit.height*.24).setFlipX(team===1);
+        if(team)a.pouch.setTint(0xffc6b4);else a.pouch.clearTint();
+        // Clip only the frame and leather, leaving baked connecting ropes out of the animated pieces.
+        const masks=this.masks[team],dir=team?-1:1;
+        const polygon=(graphics,points,map)=>{graphics.clear().fillStyle(0xffffff,1);graphics.beginPath();points.forEach(([x,y],i)=>{const v=map(x,y);if(i)graphics.lineTo(v.x,v.y);else graphics.moveTo(v.x,v.y);});graphics.closePath();graphics.fillPath();};
+        polygon(masks.head,[[.58,.01],[.72,0],[.76,.16],[.80,.32],[.83,.28],[.83,.01],[1,0],[1,.27],[.86,.48],[.71,.73],[.47,.73],[.56,.53],[.65,.36]],(x,y)=>({x:parts.head.x+dir*(x-.5)*fit.width,y:fit.y+(y-1)*fit.height}));
+        polygon(masks.pouch,[[.01,.46],[.12,.49],[.22,.49],[.30,.46],[.30,.57],[.22,.63],[.13,.64],[.05,.58]],(x,y)=>({x:pouch.x+dir*(x-.175)*fit.width,y:pouch.y+(y-.52)*fit.height}));
+        a.head.setMask(masks.headMask);a.pouch.setMask(masks.pouchMask);
+        for(const f of forks){g.lineStyle(4*dpr,0x38251b,1);g.lineBetween(f.x,f.y,pouch.x,pouch.y);g.lineStyle(2*dpr,0xd0ac74,1);g.lineBetween(f.x,f.y,pouch.x,pouch.y);}
+      }else{a.head.setCrop().clearMask();a.pouch.setVisible(false).clearMask();}
       // Reuse the actual wall face in front of the mount foot, preserving its texture and perspective.
       const wall=bases[team],cropY=Math.round((fit.coverY-(ground-fort.height))/fort.height*source.height);
       a.wall.setTexture(baseKey).setPosition(wall.x,wall.y).setDisplaySize(fort.width,fort.height).setFlipX(team===1).setCrop(0,cropY,source.width,source.height-cropY);
@@ -68,7 +94,7 @@ export class FortressMounts{
         this.fasteners.fillRoundedRect(x,y,strapW,strapH,dpr);this.fasteners.strokeRoundedRect(x,y,strapW,strapH,dpr);
         this.fasteners.fillStyle(p.bolt,1);for(const v of [.2,.75])this.fasteners.fillCircle(x+strapW/2,y+strapH*v,Math.max(.65*dpr,strapW*.17));
       }
-      this.states.push({...fit,visible:true,base:parts.base,head:parts.head,muzzle:parts.muzzle,occlusion:true});
+      this.states.push({...fit,visible:true,sling:parts.sling,base:parts.base,head:parts.head,muzzle:parts.muzzle,occlusion:true});
     }
   }
   origin(team){return this.states[team]?.muzzle;}

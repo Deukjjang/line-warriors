@@ -73,15 +73,15 @@ class Battlefield extends Phaser.Scene{
   }
   clearActors(){for(const a of this.actors.values())a.destroy();this.actors.clear();this.effects?.clear();this.accumulator=0;this.noticeUntil=0;this.shakeUntil=0;this.cameras.main.setScroll(0,0);$('battle-notice').style.display='none';}
   layout(){
-    const w=this.scale.width,h=this.scale.height,dpr=currentDpr;this.dpr=dpr;const margin=20*dpr;this.factor=(w-margin*2)/WORLD.width;this.unitScale=Math.min(1.35,Math.max(.8,w/dpr/640))*dpr;this.ground=h*.82;this.project=x=>margin+x*this.factor;
+    const w=this.scale.width,h=this.scale.height,dpr=currentDpr;this.dpr=dpr;const margin=20*dpr;this.factor=(w-margin*2)/WORLD.width;this.mobileFactor=window.innerWidth<=960?.9:1;this.baseUnitScale=Math.min(1.35,Math.max(.8,w/dpr/640))*dpr;this.unitScale=this.baseUnitScale*this.mobileFactor;this.ground=h*.82;this.project=x=>margin+x*this.factor;
     this.bg.setTexture(battle.era.background);const source=this.bg.texture.getSourceImage(),bgscale=Math.max(w/source.width,h/source.height);this.bg.setPosition(w/2,h/2).setDisplaySize(source.width*bgscale,source.height*bgscale);
-    const baseKey='base-'+battle.era.id,baseSource=this.textures.get(baseKey).getSourceImage(),fort=fortressLayout(w,h,dpr,baseSource.height/baseSource.width),baseWidth=fort.width;
+    const baseKey='base-'+battle.era.id,baseSource=this.textures.get(baseKey).getSourceImage(),fort=fortressLayout(w,h,dpr,baseSource.height/baseSource.width,this.mobileFactor<1),baseWidth=fort.width;
     for(let team=0;team<2;team++){
       const img=this.bases[team];img.setTexture(baseKey);const height=fort.height,x=fort.centres[team];img.setPosition(x,this.ground+3*dpr).setDisplaySize(baseWidth,height).setFlipX(team===1);if(team===1)img.setTint(0xffd1c5);else img.clearTint();
     }
     this.fortLayout={fort,ground:this.ground+3*dpr,dpr,era:battle.era.id,baseKey,bases:this.bases};
   }
-  unitHeight(kind){return Math.min((UNITS[kind]?.height??66)*this.unitScale,this.scale.height*.38);}
+  unitHeight(kind){return Math.min((UNITS[kind]?.height??66)*this.baseUnitScale,this.scale.height*.38)*this.mobileFactor;}
   update(_,delta){
     if(!ready||!active)return;this.layout();
     if(!paused&&!battle.outcome){this.accumulator+=Math.min(delta/1000,.1)*speed;while(this.accumulator>=1/60){battle.step(1/60);this.accumulator-=1/60;if(battle.outcome)break;}audio.music(battle.time);}
