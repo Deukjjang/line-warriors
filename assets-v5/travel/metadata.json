@@ -1,0 +1,127 @@
+{
+  "club": {
+    "stride": 94.84444444444443,
+    "type": "approved",
+    "scale": 0.97
+  },
+  "sling": {
+    "stride": 94.1773,
+    "type": "human",
+    "scale": 0.97
+  },
+  "mammoth": {
+    "stride": 94.1773,
+    "type": "animal",
+    "scale": 0.97
+  },
+  "chief": {
+    "stride": 94.3616,
+    "type": "human",
+    "scale": 0.97
+  },
+  "bossmammoth": {
+    "stride": 94.3616,
+    "type": "animal",
+    "scale": 0.971264667535854
+  },
+  "sword": {
+    "stride": 79.249,
+    "type": "human",
+    "scale": 0.97
+  },
+  "archer": {
+    "stride": 89.5698,
+    "type": "human",
+    "scale": 0.97
+  },
+  "knight": {
+    "stride": 94.3616,
+    "type": "animal",
+    "scale": 0.97
+  },
+  "musket": {
+    "stride": 94.3616,
+    "type": "human",
+    "scale": 0.97
+  },
+  "cannon": {
+    "stride": 91.2285,
+    "type": "human",
+    "scale": 0.97
+  },
+  "armored": {
+    "stride": 80.7234,
+    "type": "human",
+    "scale": 0.97
+  },
+  "rifle": {
+    "stride": 94.3616,
+    "type": "human",
+    "scale": 0.97
+  },
+  "sniper": {
+    "stride": 93.99300000000001,
+    "type": "human",
+    "scale": 0.97
+  },
+  "tank": {
+    "stride": 62.77530440403125,
+    "type": "vehicle",
+    "scale": 0.97
+  },
+  "laser": {
+    "stride": 93.8087,
+    "type": "human",
+    "scale": 0.97
+  },
+  "drone": {
+    "stride": 92.3343,
+    "type": "human",
+    "scale": 0.97
+  },
+  "robot": {
+    "stride": 94.1773,
+    "type": "human",
+    "scale": 0.97
+  },
+  "ram": {
+    "stride": 228.55086554865744,
+    "type": "vehicle",
+    "scale": 0.8108593749999999
+  },
+  "catapult": {
+    "stride": 211.7904687417559,
+    "type": "vehicle",
+    "scale": 0.88474609375
+  },
+  "wagon": {
+    "stride": 228.55086554865744,
+    "type": "vehicle",
+    "scale": 0.9067666232073012
+  },
+  "bigcannon": {
+    "stride": 310.8291771461741,
+    "type": "vehicle",
+    "scale": 0.971264667535854
+  },
+  "apc": {
+    "stride": 79.23096672353459,
+    "type": "vehicle",
+    "scale": 0.7748632812499999
+  },
+  "helicopter": {
+    "stride": 76.4845,
+    "type": "flight",
+    "scale": 0.7874074604696856
+  },
+  "satellite": {
+    "stride": 94.3616,
+    "type": "flight",
+    "scale": 0.97
+  },
+  "core": {
+    "stride": 94.3616,
+    "type": "mechanical",
+    "scale": 0.97
+  }
+}
